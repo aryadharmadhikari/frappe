@@ -973,13 +973,18 @@ export default class GridRow {
 			add_style += `left: ${this.grid.get_sticky_offset(df.fieldname)}px;`;
 		}
 
-		let grid;
-		let grid_container;
 		let input_in_focus = false;
 
 		// prevent random layout shifts caused by widgets and on click position elements inside view (UX).
 		function on_input_focus(el) {
 			input_in_focus = true;
+
+			const grid_container = el.closest(".form-grid-container")[0];
+			const grid = el.closest(".form-grid")[0];
+			if (!grid_container || !grid) return;
+
+			grid.style.position !== "relative" && $(grid).css("position", "relative");
+			!grid.style.left && $(grid).css("left", 0);
 
 			let container_width = grid_container.getBoundingClientRect().width;
 			let container_left = grid_container.getBoundingClientRect().left;
