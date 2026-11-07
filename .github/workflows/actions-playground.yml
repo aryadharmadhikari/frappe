@@ -2,7 +2,7 @@ name: Actions Playground
 
 on:
   push:
-    branches: [codex/actions-playground]
+    branches: [test/actions-playground]
   workflow_dispatch:
 
 permissions:
