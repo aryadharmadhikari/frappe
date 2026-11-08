@@ -55,7 +55,7 @@ jobs:
       matrix:
         # Always run against postgres too -- it is a supported backend (see roulette.py).
         db: ${{ fromJson(needs.checkrun.outputs.run_postgres == 'true' && '["mariadb", "postgres"]' || '["mariadb"]') }}
-        index: [1, 2]
+        index: [1, 2, 3, 4]
     services:
       postgres:
         # An empty image skips the service, so mariadb jobs do not wait for postgres to start.
@@ -102,7 +102,7 @@ jobs:
           # consumed by bench run-parallel-tests
           CAPTURE_COVERAGE: true
           BUILD_NUMBER: ${{ matrix.index }}
-          TOTAL_BUILDS: 2
+          TOTAL_BUILDS: 4
           FRAPPE_SENTRY_DSN: ${{ secrets.SENTRY_DSN || '' }}
 
       - name: Upload coverage data
