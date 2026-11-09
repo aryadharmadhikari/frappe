@@ -5,6 +5,8 @@ from frappe.website.serve import get_response_content
 
 
 class TestWebPage(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		frappe.db.delete("Web Page")
 		for t in self.globalTestRecords["Web Page"]:
