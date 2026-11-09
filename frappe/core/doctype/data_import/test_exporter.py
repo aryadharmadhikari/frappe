@@ -33,6 +33,8 @@ class ContactExportProvider(ContactImportProvider):
 
 
 class TestExporter(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		create_doctype_if_not_exists(doctype_name)
 
