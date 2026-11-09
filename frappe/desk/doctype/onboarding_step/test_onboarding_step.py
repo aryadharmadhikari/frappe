@@ -7,6 +7,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestOnboardingStep(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_get_onboarding_steps_accepts_native_list(self):
 		# in developer mode the onboarding would export itself into the app on disk
 		self.enterContext(no_developer_mode())
