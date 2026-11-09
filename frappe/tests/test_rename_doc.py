@@ -38,6 +38,8 @@ def patch_db(endpoints: list[str] | None = None):
 
 
 class TestRenameSingleDocType(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_rename_single_document_is_rejected(self):
 		doctype = new_doctype("Test Single Rename Rejected", issingle=1).insert()
 
