@@ -7,6 +7,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestLike(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def _liked_by(self, todo):
 		return frappe.parse_json(frappe.db.get_value("ToDo", todo.name, "_liked_by") or "[]")
 
