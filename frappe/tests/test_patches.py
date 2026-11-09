@@ -134,6 +134,8 @@ class TestNeverSkipPatches(IntegrationTestCase):
 
 
 class TestPatchReader(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def get_patches(self):
 		return (
 			patch_handler.get_patches_from_app("frappe"),
