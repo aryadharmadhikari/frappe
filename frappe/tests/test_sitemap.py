@@ -5,6 +5,8 @@ from frappe.www.sitemap import get_public_pages_from_doctypes
 
 
 class TestSitemap(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_sitemap(self):
 		with (
 			self.change_settings("About Us Settings", is_disabled=0),
