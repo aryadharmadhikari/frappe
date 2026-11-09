@@ -37,6 +37,8 @@ class TestTheResolverSeam(IntegrationTestCase):
 
 	"""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		frappe.set_user("Administrator")
 
@@ -165,6 +167,8 @@ class TestTheResolverSeam(IntegrationTestCase):
 
 class TestSidebarBoot(IntegrationTestCase):
 	"""The module-keyed boot payload, now the only navigation payload."""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	def setUp(self):
 		frappe.set_user("Administrator")
@@ -718,6 +722,8 @@ class TestPrivateWorkspacesReachTheirOwner(IntegrationTestCase):
 
 	"""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	OWNER = "test-derived-private-owner@example.com"
 	STRANGER = "test-derived-private-stranger@example.com"
 
@@ -897,6 +903,8 @@ class TestAClaimOnAnAbsentEntityIsInert(IntegrationTestCase):
 
 	"""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	MISSING = "Test Entity From An Absent App"
 	MODULE = "Test Absent Claim Module"
 	USER = "absent-app-claim@example.com"
@@ -1047,6 +1055,8 @@ class TestOwnershipIsPerUser(IntegrationTestCase):
 
 	"""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	ENTITY = "ToDo"
 	USER = "per-user-ownership@example.com"
 
@@ -1106,6 +1116,8 @@ class TestAModuleInNoAppHasNoAppContext(IntegrationTestCase):
 	    unplaced  logo = module icon   items = (empty)
 
 	"""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	def setUp(self):
 		frappe.set_user("Administrator")
