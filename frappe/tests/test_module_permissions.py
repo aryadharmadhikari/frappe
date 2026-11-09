@@ -12,6 +12,8 @@ OPEN = "Desk"
 
 
 class TestModulePermissions(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		frappe.set_user("Administrator")
 		if not frappe.db.exists("Role", ROLE):
