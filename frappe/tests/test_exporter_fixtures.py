@@ -9,6 +9,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestDataImportFixtures(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		pass
 
