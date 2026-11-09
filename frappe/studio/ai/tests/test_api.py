@@ -7,6 +7,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestApi(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		app = make_studio_app(app_name="ai-" + frappe.generate_hash(length=8))
 		self.page = make_studio_page(app.name)
