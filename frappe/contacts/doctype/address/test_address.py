@@ -15,6 +15,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestAddress(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def create_test_address(self, address_title="_Test Address", address_type="Office"):
 		if not frappe.db.exists("Address Template", "India"):
 			frappe.get_doc({"doctype": "Address Template", "country": "India", "is_default": 1}).insert()
