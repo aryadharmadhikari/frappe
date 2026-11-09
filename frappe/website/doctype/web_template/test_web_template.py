@@ -9,6 +9,8 @@ from frappe.website.serve import get_response
 
 
 class TestWebTemplate(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_render_web_template_with_values(self):
 		doc = frappe.get_doc("Web Template", "Hero with Right Image")
 		values = {
