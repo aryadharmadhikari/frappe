@@ -1162,6 +1162,8 @@ class TestDocumentWebView(IntegrationTestCase):
 
 
 class TestLazyDocument(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_lazy_documents(self):
 		# Warmup meta etc
 		_ = frappe.get_lazy_doc("User", "Guest")
