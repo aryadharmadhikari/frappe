@@ -41,6 +41,8 @@ class TestPreview(IntegrationTestCase):
 	These hit real Chromium, so they only run when it is already installed.
 	"""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	HTML = (
 		"<html><body style='margin:0'>"
 		"<div style='width:100%;height:200px;background:#16a34a'>preview</div>"
@@ -84,6 +86,8 @@ class TestPreview(IntegrationTestCase):
 
 class TestPreviewValidation(IntegrationTestCase):
 	"""Format validation raises before Chromium is touched, so it runs everywhere."""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	def test_invalid_format_raises(self):
 		from frappe.utils.preview import get_preview_from_html
