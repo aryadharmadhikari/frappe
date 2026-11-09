@@ -14,6 +14,8 @@ EMAIL = "route.history.tester@example.com"
 
 
 class TestRouteHistory(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		if not frappe.db.exists("User", EMAIL):
 			frappe.get_doc(
