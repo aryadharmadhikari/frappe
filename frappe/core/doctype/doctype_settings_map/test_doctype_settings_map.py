@@ -19,6 +19,8 @@ CUSTOM_NAME = "User"
 
 
 class IntegrationTestDocTypeSettingsMap(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		self._developer_mode = frappe.conf.developer_mode
 		frappe.conf.developer_mode = 0  # keep standard-map inserts from writing to disk
