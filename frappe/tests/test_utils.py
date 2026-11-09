@@ -113,6 +113,8 @@ class Capturing(list):
 
 
 class TestFilters(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_simple_dict(self):
 		self.assertTrue(evaluate_filters({"doctype": "User", "status": "Open"}, {"status": "Open"}))
 		self.assertFalse(evaluate_filters({"doctype": "User", "status": "Open"}, {"status": "Closed"}))
@@ -422,6 +424,8 @@ class TestFilters(IntegrationTestCase):
 
 
 class TestMoney(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_money_in_words(self):
 		test_cases = {
 			"BHD": [
@@ -470,6 +474,8 @@ class TestMoney(IntegrationTestCase):
 
 
 class TestDataManipulation(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_scrub_urls(self):
 		html = """
 			<p>You have a new message from: <b>John</b></p>
@@ -497,6 +503,8 @@ class TestDataManipulation(IntegrationTestCase):
 
 
 class TestFieldCasting(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_str_types(self):
 		STR_TYPES = (
 			"Data",
@@ -544,6 +552,8 @@ class TestFieldCasting(IntegrationTestCase):
 
 
 class TestMathUtils(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_floor(self):
 		from decimal import Decimal
 
@@ -566,6 +576,8 @@ class TestMathUtils(IntegrationTestCase):
 
 
 class TestHTMLUtils(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_clean_email_html(self):
 		from frappe.utils.html_utils import clean_email_html
 
@@ -662,6 +674,8 @@ class TestHTMLUtils(IntegrationTestCase):
 
 
 class TestValidationUtils(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_valid_url(self):
 		# Edge cases
 		self.assertFalse(validate_url(""))
@@ -859,6 +873,8 @@ class TestValidationUtils(IntegrationTestCase):
 
 
 class TestImage(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_strip_exif_data(self):
 		original_image = Image.open(frappe.get_app_path("frappe", "tests", "data", "exif_sample_image.jpg"))
 		original_image_content = open(
@@ -1200,6 +1216,8 @@ class TestImage(IntegrationTestCase):
 
 
 class TestPythonExpressions(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_validation_for_good_python_expression(self):
 		valid_expressions = [
 			"foo == bar",
@@ -1227,28 +1245,25 @@ class TestPythonExpressions(IntegrationTestCase):
 
 
 class TestDiffUtils(IntegrationTestCase):
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		cls.doc = frappe.get_doc(doctype="Client Script", dt="Client Script", name="test_client_script")
-		cls.doc.insert()
-		cls.doc.script = "2;"
-		cls.doc.save(ignore_version=False)
-		cls.doc.script = "42;"
-		cls.doc.save(ignore_version=False)
+	ROLLBACK_AFTER_EACH_TEST = True
 
-		cls.versions = version_query(
+	def setUp(self):
+		super().setUp()
+		doc = frappe.get_doc(doctype="Client Script", dt="Client Script", name="test_client_script")
+		doc.insert()
+		doc.script = "2;"
+		doc.save(ignore_version=False)
+		doc.script = "42;"
+		doc.save(ignore_version=False)
+
+		self.versions = version_query(
 			doctype="Version",
 			txt="",
 			searchfield="name",
 			start=0,
 			page_len=20,
-			filters={"ref_doctype": cls.doc.doctype, "docname": cls.doc.name},
+			filters={"ref_doctype": doc.doctype, "docname": doc.name},
 		)
-
-	@classmethod
-	def tearDownClass(cls):
-		cls.doc.delete()
 
 	def test_version_query(self):
 		self.assertGreaterEqual(len(self.versions), 2)
@@ -1269,6 +1284,8 @@ class TestDiffUtils(IntegrationTestCase):
 
 
 class TestDateUtils(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_first_day_of_week(self):
 		# Monday as start of the week
 		with patch.object(frappe.utils.data, "get_first_day_of_the_week", return_value="Monday"):
@@ -1470,6 +1487,8 @@ class TestDateUtils(IntegrationTestCase):
 
 
 class TestResponse(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_json_handler(self):
 		class TEST(Enum):
 			ABC = "!@)@)!"
@@ -1518,6 +1537,8 @@ class TestResponse(IntegrationTestCase):
 
 
 class TestTimeDeltaUtils(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_format_timedelta(self):
 		self.assertEqual(format_timedelta(timedelta(seconds=0)), "0:00:00")
 		self.assertEqual(format_timedelta(timedelta(hours=10)), "10:00:00")
@@ -1539,6 +1560,8 @@ class TestTimeDeltaUtils(IntegrationTestCase):
 
 
 class TestXlsxUtils(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_unescape(self):
 		from frappe.utils.xlsxutils import handle_html
 
@@ -1601,6 +1624,8 @@ class TestXlsxUtils(IntegrationTestCase):
 
 
 class TestCsvUtils(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_escape_formula_injection_prefixes_trigger_chars(self):
 		from frappe.utils.csvutils import FORMULA_TRIGGER_CHARS, escape_formula_injection
 
@@ -1821,6 +1846,8 @@ class TestLinkTitle(IntegrationTestCase):
 
 
 class TestAppParser(MockedRequestTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_app_name_parser(self):
 		self.responses.add(
 			"HEAD",
@@ -1839,6 +1866,8 @@ class TestAppParser(MockedRequestTestCase):
 
 class TestIntrospectionMagic(IntegrationTestCase):
 	"""Test utils that inspect live objects"""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	def test_get_newargs(self):
 		# `kwargs` is just convention any **varname should work.
@@ -1864,6 +1893,8 @@ class TestIntrospectionMagic(IntegrationTestCase):
 
 
 class TestMakeRandom(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_get_random(self):
 		self.assertIsInstance(get_random("DocType", doc=True), Document)
 		self.assertIsInstance(get_random("DocType"), str)
@@ -1876,6 +1907,8 @@ class TestMakeRandom(IntegrationTestCase):
 
 
 class TestLazyLoader(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_lazy_import_module(self):
 		from frappe.utils.lazy_loader import lazy_import
 
@@ -1889,6 +1922,8 @@ class TestLazyLoader(IntegrationTestCase):
 
 
 class TestIdenticon(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_get_identicon(self):
 		identicon_url = get_identicon("developers@frappe.io")
 		self.assertIsInstance(identicon_url, str)
@@ -1910,6 +1945,8 @@ class TestIdenticon(IntegrationTestCase):
 
 
 class TestContainerUtils(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_dict_to_str(self):
 		self.assertEqual(dict_to_str({"a": "b"}), "a=b")
 
@@ -1921,6 +1958,8 @@ class TestContainerUtils(IntegrationTestCase):
 
 
 class TestLocks(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_locktimeout(self):
 		lock_name = "test_lock"
 		with filelock(lock_name):
@@ -1937,6 +1976,8 @@ class TestLocks(IntegrationTestCase):
 
 
 class TestMiscUtils(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_get_file_timestamp(self):
 		self.assertIsInstance(get_file_timestamp(__file__), str)
 
@@ -1998,6 +2039,8 @@ class TestMiscUtils(IntegrationTestCase):
 
 
 class TestTypingValidations(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	ERR_REGEX = "^Argument '.*' should be of type '.*' but got '.*' instead.$"
 
 	def test_validate_whitelisted_api(self):
@@ -2084,6 +2127,8 @@ class TestTypingValidations(IntegrationTestCase):
 
 
 class TestTBSanitization(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_traceback_sanitization(self):
 		handle = io.BufferedWriter(io.BytesIO())
 		try:
@@ -2197,6 +2242,8 @@ class TestRounding(IntegrationTestCase):
 	and cover behaviour the oracles can't reach (string parsing, invalid input, etc.).
 	"""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_flt_parses_strings_and_ignores_invalid_input(self):
 		self.assertEqual(flt(None), 0)
 		self.assertEqual(flt("what"), 0)
@@ -2288,6 +2335,8 @@ class TestRounding(IntegrationTestCase):
 
 
 class TestArgumentTypingValidations(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_validate_argument_types(self):
 		from unittest.mock import AsyncMock, MagicMock, Mock
 
@@ -2390,6 +2439,8 @@ class TestArgumentTypingValidations(IntegrationTestCase):
 
 
 class TestChangeLog(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_parse_latest_non_beta_release_skips_invalid_tags(self):
 		from semantic_version import Version
 
@@ -2459,6 +2510,8 @@ class TestChangeLog(IntegrationTestCase):
 
 
 class TestCrypto(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_hashing(self):
 		self.assertEqual(sha256_hash(""), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
 		self.assertEqual(
@@ -2468,6 +2521,8 @@ class TestCrypto(IntegrationTestCase):
 
 
 class TestURLTrackers(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_add_trackers_to_url(self):
 		url = "https://example.com"
 		source = "test_source"
