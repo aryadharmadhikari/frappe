@@ -11,6 +11,8 @@ FEATURE_FIELD = "enable_email_event_reminders"
 
 
 class TestNotificationSettings(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		self.user = "test_notification_feature@example.com"
 		if not frappe.db.exists("User", self.user):
