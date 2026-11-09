@@ -186,6 +186,8 @@ class TestWorkspaceAccessLevels(IntegrationTestCase):
 
 	"""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	MODULE = "Test Access Level Module"
 	DESK_USER = "test-workspace-desk-user@example.com"
 	MANAGER = "test-workspace-page-manager@example.com"
@@ -367,6 +369,8 @@ class TestBothDoorsToTheModule(IntegrationTestCase):
 	`update_workspace_settings` took a `module` and wrote it straight through, so the same
 	operation was validated or not depending on which one the client called.
 	"""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	MODULE = "Test Both Doors Module"
 	BLOCKED = "Test Both Doors Blocked Module"
