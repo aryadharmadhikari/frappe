@@ -11,6 +11,8 @@ from frappe.utils.data import add_to_date, now_datetime
 
 
 class TestScheduledJobType(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		frappe.db.rollback()
 		sync_jobs()
