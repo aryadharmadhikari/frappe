@@ -9,6 +9,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestDashboardSettings(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_create_dashboard_settings_only_for_the_session_user(self):
 		with (
 			test_user(roles=["Desk User"]) as user,
