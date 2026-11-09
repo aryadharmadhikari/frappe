@@ -27,7 +27,7 @@ jobs:
     steps:
       - name: Clone
         uses: actions/checkout@v7
-      - name: Check if unit tests should be run
+      - name: Select server tests
         id: check-build
         run: |
           python "${GITHUB_WORKSPACE}/.github/helper/roulette.py"
@@ -89,20 +89,7 @@ jobs:
         env:
           SNAPSHOT_DIR: ${{ runner.temp }}/prepared-bench
           DB: ${{ matrix.db }}
-        run: |
-          mkdir -p "$SNAPSHOT_DIR"
-          curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-connrefused \
-            --max-time 5 http://test_site:8000/api/method/ping > /dev/null
-          bench --site test_site backup --ignore-backup-conf \
-            --backup-path-db "$SNAPSHOT_DIR/database.sql.gz"
-          printf '%s\n' "$GITHUB_WORKSPACE" > "$SNAPSHOT_DIR/workspace"
-          printf '%s\n' "$DB" > "$SNAPSHOT_DIR/db"
-          lsb_release -rs > "$SNAPSHOT_DIR/ubuntu-version"
-          python -c 'import platform; print(platform.python_version())' > "$SNAPSHOT_DIR/python-version"
-          node -p 'process.versions.node' > "$SNAPSHOT_DIR/node-version"
-          tar --exclude='sites/*/logs' --exclude='sites/*/private/backups' \
-            --exclude='config/pids' --exclude='config/*.pid' -cf - \
-            apps env sites config Procfile chromium | gzip -1 > "$SNAPSHOT_DIR/bench.tar.gz"
+        run: bash .github/helper/save-prepared-bench.sh
 
       - name: Upload prepared bench
         uses: actions/upload-artifact@v7
@@ -175,13 +162,7 @@ jobs:
 
       - name: Show bench output
         if: ${{ always() }}
-        run: |
-          cat bench_start.log || true
-          cd logs
-          for f in ${GITHUB_WORKSPACE}/*.log*; do
-            echo "Printing log: $f";
-            cat $f
-          done
+        run: bash .github/helper/show-bench-logs.sh
 
   migrate:
     name: Migration
@@ -215,57 +196,16 @@ jobs:
       - name: Download database artifact
         env:
           DB_ARTIFACT_URL: https://frappe.io/files/v14-frappe.sql.gz
-        run: |
-          wget "$DB_ARTIFACT_URL"
-          bench --site test_site --force restore ${GITHUB_WORKSPACE}/$(basename "$DB_ARTIFACT_URL")
-
-          function update_to_version() {
-              version="$1"
-              python_version="${2:-3.14}"
-
-              if [ -z "$version" ]; then
-                  ref="${{ github.sha }}"
-              else
-                  ref="version-$version-hotfix"
-              fi
-
-              echo "Updating to $ref"
-
-              git -C apps/frappe fetch --depth 1 upstream "$ref":"$ref"
-              git -C apps/frappe checkout --quiet --force "$ref"
-
-              if pgrep honcho > /dev/null; then
-                  pgrep honcho | xargs kill
-                  sleep 10
-              fi
-
-              bench migrate-env "python$python_version"
-
-              bench setup requirements
-              bench start &>> ${GITHUB_WORKSPACE}/bench_start.log &
-              bench --site test_site migrate
-          }
-
-          declare -f update_to_version > "$RUNNER_TEMP/migrate"
+        run: bash .github/helper/test-server-migration.sh restore
 
       - name: Update to v15
-        run: |
-          source $RUNNER_TEMP/migrate
-          update_to_version 15 3.13
-          exit $?
+        run: bash .github/helper/test-server-migration.sh 15 3.13
 
       - name: Update to v16
-        run: |
-          source $RUNNER_TEMP/migrate
-          update_to_version 16
-          exit $?
+        run: bash .github/helper/test-server-migration.sh 16
 
       - name: Update to last commit
-        run: |
-          source $RUNNER_TEMP/migrate
-          update_to_version
-          exit $?
-          bench --site test_site execute frappe.tests.utils.check_orpahned_doctypes
+        run: bash .github/helper/test-server-migration.sh
 
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@v3
@@ -273,13 +213,7 @@ jobs:
 
       - name: Show bench output
         if: ${{ always() }}
-        run: |
-          cat bench_start.log || true
-          cd logs
-          for f in ${GITHUB_WORKSPACE}/*.log*; do
-            echo "Printing log: $f";
-            cat $f
-          done
+        run: bash .github/helper/show-bench-logs.sh
 
   coverage:
     name: Coverage Wrap Up
