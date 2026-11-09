@@ -7,6 +7,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestCalendar(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_get_events_accepts_range_from_a_different_timezone(self):
 		todo = frappe.get_doc(doctype="ToDo", description="Renew SSL certificate", date="2026-05-10").insert()
 
