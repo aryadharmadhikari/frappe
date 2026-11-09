@@ -5,6 +5,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestViewLog(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def tearDown(self):
 		frappe.set_user("Administrator")
 
