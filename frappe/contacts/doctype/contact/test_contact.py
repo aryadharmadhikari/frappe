@@ -12,6 +12,8 @@ EXTRA_TEST_RECORD_DEPENDENCIES = ["Contact", "Salutation"]
 
 
 class TestContact(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_check_default_email(self):
 		emails = [
 			{"email": "test1@example.com", "is_primary": 0},
