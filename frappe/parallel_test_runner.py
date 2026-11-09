@@ -24,6 +24,9 @@ TEST_WEIGHT_OVERRIDES = {
 	# XXX: command tests are significantly overweight, need a better heuristic than test count
 	# Possible better solution: stats from previous test runs.
 	"test_commands.py": 10,
+	"test_custom_sidebar.py": 3,
+	"test_module_onboarding.py": 5,
+	"test_sidebar.py": 2,
 }
 
 
