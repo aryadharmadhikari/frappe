@@ -7,6 +7,8 @@ from frappe.website.doctype.discussion_topic.discussion_topic import submit_disc
 
 
 class TestDiscussionTopic(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_edit_discussion_reply(self):
 		"""Test whether editing a reply is restricted to the owner."""
 		topic_name = submit_discussion("User", "Administrator", "Original", "Title")
