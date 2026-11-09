@@ -164,6 +164,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: ./.github/actions/setup
+        name: Restore prepared environment
+        with:
+          disable-socketio: true
+          db-root-password: ${{ env.DB_ROOT_PASSWORD }}
+          db: ${{ matrix.db }}
+          restore-bench-artifact: bench-${{ matrix.db }}
+        env:
+          PYTHONWARNINGS: "ignore:Unimplemented abstract methods {'locate_file'}:DeprecationWarning"
+
       - name: Run Tests
         run: |
           cd sites && ../env/bin/python3 ../apps/frappe/.github/helper/ci.py
