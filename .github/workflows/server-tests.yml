@@ -71,11 +71,29 @@ jobs:
         env:
           MARIADB_ROOT_PASSWORD: ${{ env.DB_ROOT_PASSWORD }}
     steps:
+      - &prepared-bench-key
+        name: Compute prepared bench cache key
+        id: prepared-bench-key
+        env:
+          DB: ${{ matrix.db }}
+        run: echo "key=prepared-bench-v1-$(lsb_release -rs)-$RUNNER_ARCH-$DB-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Check prepared bench cache
+        id: prepared-bench-cache
+        uses: actions/cache/restore@v6
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/prepared-bench
+          key: ${{ steps.prepared-bench-key.outputs.key }}
+          lookup-only: true
+
       - uses: actions/checkout@v7
+        if: steps.prepared-bench-cache.outputs.cache-hit != 'true'
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
         name: Environment Setup
+        if: steps.prepared-bench-cache.outputs.cache-hit != 'true'
         with:
           python-version: '3.14'
           node-version: 24
@@ -86,20 +104,19 @@ jobs:
           PYTHONWARNINGS: "ignore:Unimplemented abstract methods {'locate_file'}:DeprecationWarning"
 
       - name: Save prepared bench
+        if: steps.prepared-bench-cache.outputs.cache-hit != 'true'
         env:
           SNAPSHOT_DIR: ${{ runner.temp }}/prepared-bench
           DB: ${{ matrix.db }}
         run: bash .github/helper/save-prepared-bench.sh
 
-      - name: Upload prepared bench
-        uses: actions/upload-artifact@v7
+      - name: Cache prepared bench
+        if: steps.prepared-bench-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        continue-on-error: true
         with:
-          name: bench-${{ matrix.db }}
           path: ${{ runner.temp }}/prepared-bench
-          compression-level: 0
-          retention-days: 1
-          overwrite: true
-          if-no-files-found: error
+          key: ${{ steps.prepared-bench-key.outputs.key }}
 
       - name: Show bench output
         if: ${{ always() }}
@@ -129,13 +146,23 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - *prepared-bench-key
+
+      - name: Restore prepared bench cache
+        id: prepared-bench-cache
+        uses: actions/cache/restore@v6
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/prepared-bench
+          key: ${{ steps.prepared-bench-key.outputs.key }}
+
       - uses: ./.github/actions/setup
-        name: Restore prepared environment
+        name: Prepare integration environment
         with:
           disable-socketio: true
           db-root-password: ${{ env.DB_ROOT_PASSWORD }}
           db: ${{ matrix.db }}
-          restore-bench-artifact: bench-${{ matrix.db }}
+          prepared-bench-path: ${{ steps.prepared-bench-cache.outputs.cache-hit == 'true' && format('{0}/prepared-bench', runner.temp) || '' }}
         env:
           PYTHONWARNINGS: "ignore:Unimplemented abstract methods {'locate_file'}:DeprecationWarning"
 
