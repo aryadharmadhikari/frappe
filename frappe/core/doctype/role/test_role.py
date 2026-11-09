@@ -7,6 +7,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestUser(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_disable_role(self):
 		frappe.get_doc("User", "test@example.com").add_roles("_Test Role 3")
 
