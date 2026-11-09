@@ -8,6 +8,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestDiscussionReply(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def make_reply(self, reply):
 		topic = frappe.get_doc({"doctype": "Discussion Topic", "title": "Test Topic"}).insert(
 			ignore_permissions=True
