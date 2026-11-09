@@ -7,6 +7,8 @@ from frappe.utils.jinja import validate_template
 
 
 class TestAddressTemplate(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self) -> None:
 		frappe.db.delete("Address Template", {"country": "India"})
 		frappe.db.delete("Address Template", {"country": "Brazil"})
