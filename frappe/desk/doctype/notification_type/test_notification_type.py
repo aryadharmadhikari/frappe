@@ -10,6 +10,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestNotificationType(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_builtin_types_seeded(self):
 		install_notification_types()
 		for definition in BUILTIN_NOTIFICATION_TYPES:
