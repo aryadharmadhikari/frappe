@@ -11,6 +11,8 @@ SECTION = {"label": "Totals", "columns": [{"label": "", "fields": []}]}
 
 
 class TestPrintFormatSnippet(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def make(self, name, **kwargs):
 		kwargs.setdefault("snippet_type", "Section")
 		kwargs.setdefault("content", json.dumps(SECTION))
