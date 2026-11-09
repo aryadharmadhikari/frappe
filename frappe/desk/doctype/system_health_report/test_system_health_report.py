@@ -45,6 +45,8 @@ class TestSchedulerHealthStatus(UnitTestCase):
 
 
 class TestSystemHealthReport(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_it_works(self):
 		getdoc("System Health Report", "System Health Report")
 
