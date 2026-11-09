@@ -16,6 +16,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestApi(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_custom_components_come_only_from_studio_apps(self):
 		with exports_in_tempdir():
 			app = make_studio_app(
