@@ -73,6 +73,8 @@ def make_page_with_data(app_name: str):
 
 
 class TestStudioPage(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_keep_variant_collapses_the_block_to_the_chosen_option(self):
 		app = make_studio_app(app_name="variants-" + frappe.generate_hash(length=8))
 		hero = variants_block("Variants-hero", "Hero", [("option-a", "A"), ("option-b", "B")])
