@@ -5,6 +5,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestCustomDocPerm(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_if_owner_cleared_for_high_permlevel(self):
 		"""`if_owner` is only honoured at permlevel 0; it is cleared at higher levels."""
 		perm = frappe.new_doc("Custom DocPerm")
