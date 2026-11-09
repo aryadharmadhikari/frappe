@@ -13,6 +13,8 @@ def make_studio_user(email: str) -> str:
 
 
 class TestPermissions(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		self.owner = make_studio_user("studio-owner@example.com")
 		self.other = make_studio_user("studio-other@example.com")
