@@ -32,6 +32,7 @@ class IntegrationTestCase(UnitTestCase):
 
 	TEST_SITE = "test_site"
 
+	ROLLBACK_AFTER_EACH_TEST = False
 	SHOW_TRANSACTION_COMMIT_WARNINGS = False
 	maxDiff = 10_000  # prints long diffs but useful in CI
 
@@ -76,6 +77,13 @@ class IntegrationTestCase(UnitTestCase):
 	def tearDownClass(cls) -> None:
 		# Add any necessary teardown code here
 		super().tearDownClass()
+
+	def run(self, result=None):
+		"""Roll back opted-in tests after their cleanups, even if setup fails."""
+		if self.ROLLBACK_AFTER_EACH_TEST:
+			self.addCleanup(frappe.local.request_cache.clear)
+			self.addCleanup(_rollback_db)
+		return super().run(result)
 
 	def setUp(self) -> None:
 		faulthandler.dump_traceback_later(STUCK_TEST_THRESHOLD, file=sys.__stderr__)
