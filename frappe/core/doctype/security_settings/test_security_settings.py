@@ -8,6 +8,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestSecuritySettings(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_public_policy_section_default(self):
 		doc = frappe.get_doc(
 			{
