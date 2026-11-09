@@ -159,6 +159,8 @@ class TestAutomationEvents(IntegrationTestCase):
 class TestRegisteredEvents(IntegrationTestCase):
 	"""Apps may register a bare name or a {name: schema} map; builders read the schema."""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		frappe.set_user("Administrator")
 		clear_automation_cache()
