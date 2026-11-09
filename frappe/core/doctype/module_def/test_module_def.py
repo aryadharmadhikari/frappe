@@ -75,6 +75,8 @@ def custom_module(name: str, app: str | None = None):
 class TestCustomModuleIsSiteOwned(IntegrationTestCase):
 	"""`custom` governs lifecycle and `app_name` governs placement, and nothing else."""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_a_custom_module_needs_no_placement(self):
 		"""`app_name` is a hint about which dock lists the module, so a module that has not
 		chosen one is a legitimate module rather than an incomplete record."""
@@ -158,6 +160,8 @@ class TestCustomModuleIsSiteOwned(IntegrationTestCase):
 class TestUninstallLeavesCustomModulesAlone(IntegrationTestCase):
 	"""Uninstalling an app takes the app's own modules. The site's are the site's."""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_uninstall_takes_only_the_apps_own_modules(self):
 		with custom_module("Test Surviving Module", app="frappe") as module:
 			owned = get_app_owned_modules("frappe")
@@ -185,6 +189,8 @@ class TestDisablingTheHostAppLeavesTheModule(IntegrationTestCase):
 	stay. A custom module can never become unreachable.
 	"""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def disabled_modules_with(self, app: str) -> set[str]:
 		# the answer is request-cached, and something earlier in the process has already asked
 		if getattr(frappe.local, "request_cache", None):
@@ -207,6 +213,8 @@ class TestDisablingTheHostAppLeavesTheModule(IntegrationTestCase):
 
 class TestAnAppWinsTheName(IntegrationTestCase):
 	"""An app install is never blocked by a site's naming choice."""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	def test_an_app_module_takes_its_name_from_a_custom_module(self):
 		with custom_module("Test Contested Module") as module:
@@ -295,6 +303,8 @@ class TestAnAppWinsTheName(IntegrationTestCase):
 class TestSyncGivesEveryDeclaredModuleARow(IntegrationTestCase):
 	"""`sync_module_defs` runs on every migrate, ahead of the patches, so a module an app added
 	after that app was installed exists by the time anything tries to link to it."""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	def setUp(self):
 		super().setUp()
