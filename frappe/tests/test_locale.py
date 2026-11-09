@@ -4,6 +4,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestLocale(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_locale_value_without_language(self):
 		lang = frappe.local.lang
 		date_format = frappe.db.get_default("date_format")
