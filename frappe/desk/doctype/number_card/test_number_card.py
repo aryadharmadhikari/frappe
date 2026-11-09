@@ -9,6 +9,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestNumberCard(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_report_card_hidden_when_report_is_not_allowed(self):
 		user = "test2@example.com"
 		report_name = "Test Restricted Number Card Report"
