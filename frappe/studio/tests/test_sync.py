@@ -28,6 +28,8 @@ def delete_rows(app):
 
 
 class TestSync(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_sync(self):
 		with exports_in_tempdir():
 			app = make_standard_app()
