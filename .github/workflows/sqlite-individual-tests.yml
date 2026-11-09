@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 env:
-  SHARD_COUNT: 4
+  SHARD_COUNT: 1
 
 jobs:
   checkrun:
