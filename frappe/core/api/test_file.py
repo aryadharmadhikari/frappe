@@ -7,6 +7,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestFileAPI(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_get_attached_images_accepts_native_list(self):
 		todo = frappe.get_doc(doctype="ToDo", description="file api").insert()
 		# names as a native list instead of a JSON string (frappe.parse_json passthrough)
