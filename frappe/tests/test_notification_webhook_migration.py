@@ -14,6 +14,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestNotificationWebhookMigration(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		super().setUp()
 		frappe.db.savepoint("notification_webhook_migration_test")
