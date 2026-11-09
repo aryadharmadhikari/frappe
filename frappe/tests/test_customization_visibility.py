@@ -9,6 +9,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestHideCustomizations(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		super().setUp()
 		self.target = "ToDo"
@@ -95,6 +97,8 @@ class TestHideCustomizations(IntegrationTestCase):
 
 
 class TestFieldHiddenByApp(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_field_flagged_by_its_own_app_is_hidden(self):
 		self.assertTrue(is_field_hidden_by_app(frappe._dict(is_app_disabled=1)))
 		self.assertFalse(is_field_hidden_by_app(frappe._dict(is_app_disabled=0)))
