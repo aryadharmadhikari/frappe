@@ -43,16 +43,16 @@ jobs:
     needs: checkrun
     if: ${{ needs.checkrun.outputs.build == 'strawberry' }}
     runs-on: ubuntu-latest
-    env:
+    env: &server-environment
       NODE_ENV: "production"
       PYTHONWARNINGS: "module,ignore:::babel.messages.extract"
       DB_ROOT_PASSWORD: db_root
     strategy:
       fail-fast: false
       matrix:
-        db: ${{ fromJson(needs.checkrun.outputs.run_postgres == 'true' && '["mariadb", "postgres"]' || '["mariadb"]') }}
+        db: &databases ${{ fromJson(needs.checkrun.outputs.run_postgres == 'true' && '["mariadb", "postgres"]' || '["mariadb"]') }}
     services:
-      postgres:
+      postgres: &postgres-service
         image: ${{ matrix.db == 'postgres' && 'postgres:18.0' || '' }}
         ports:
           - 5432:5432
@@ -63,7 +63,7 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 3
-      mariadb:
+      mariadb: &mariadb-service
         image: mariadb:11.8
         ports:
           - 3306:3306
@@ -124,38 +124,16 @@ jobs:
     if: ${{ needs.checkrun.outputs.build == 'strawberry' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      NODE_ENV: "production"
-      # noisy 3rd party library warnings
-      PYTHONWARNINGS: "module,ignore:::babel.messages.extract"
-      DB_ROOT_PASSWORD: db_root
+    env: *server-environment
 
     strategy:
       fail-fast: false
       matrix:
-        # Always run against postgres too -- it is a supported backend (see roulette.py).
-        db: ${{ fromJson(needs.checkrun.outputs.run_postgres == 'true' && '["mariadb", "postgres"]' || '["mariadb"]') }}
+        db: *databases
         index: [1, 2, 3, 4]
     services:
-      postgres:
-        # An empty image skips the service, so mariadb jobs do not wait for postgres to start.
-        image: ${{ matrix.db == 'postgres' && 'postgres:18.0' || '' }}
-        ports:
-          - 5432:5432
-        env:
-          POSTGRES_PASSWORD: travis
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 3
-      mariadb:
-        image: mariadb:11.8
-        ports:
-          - 3306:3306
-        options: --health-cmd="healthcheck.sh --connect --innodb_initialized" --health-interval=5s --health-timeout=2s --health-retries=3 --tmpfs=/var/lib/mysql:rw,noexec,nosuid,size=2g
-        env:
-          MARIADB_ROOT_PASSWORD: ${{ env.DB_ROOT_PASSWORD }}
+      postgres: *postgres-service
+      mariadb: *mariadb-service
       smtp_server:
         image: rnwood/smtp4dev:3.7.1
         ports:
@@ -215,13 +193,7 @@ jobs:
       PYTHONWARNINGS: "ignore"
       DB_ROOT_PASSWORD: db_root
     services:
-      mariadb:
-        image: mariadb:11.8
-        ports:
-          - 3306:3306
-        options: --health-cmd="healthcheck.sh --connect --innodb_initialized" --health-interval=5s --health-timeout=2s --health-retries=3 --tmpfs=/var/lib/mysql:rw,noexec,nosuid,size=2g
-        env:
-          MARIADB_ROOT_PASSWORD: ${{ env.DB_ROOT_PASSWORD }}
+      mariadb: *mariadb-service
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
