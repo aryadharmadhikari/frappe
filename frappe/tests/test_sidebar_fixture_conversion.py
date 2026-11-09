@@ -81,6 +81,8 @@ def link(doctype):
 
 
 class TestSidebarFixtureConversion(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		with no_developer_mode():
 			frappe.get_doc({"doctype": "Module Def", "module_name": MODULE, "app_name": "frappe"}).insert(
@@ -217,6 +219,8 @@ class TestTheMerge(IntegrationTestCase):
 	the way `read_fixtures` hands them over.
 
 	"""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	def source(self, title, items, **extra):
 		"""A fixture in the shape `convert_app` passes down. See `read_fixtures`."""
@@ -367,6 +371,8 @@ class TestAnAppThatHasNotFollowedTheRename(IntegrationTestCase):
 
 	"""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_the_old_folder_is_not_walked(self):
 		import shutil
 
@@ -409,6 +415,8 @@ class TestAnAppThatHasNotFollowedTheRename(IntegrationTestCase):
 
 class TestTheNotice(IntegrationTestCase):
 	"""It names the apps that actually still hold a folder, and says nothing when none do."""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	def run_patch(self) -> list[str]:
 		lines = []
