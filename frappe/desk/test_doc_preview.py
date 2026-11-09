@@ -7,6 +7,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestDocPreview(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		self.todo = frappe.get_doc({"doctype": "ToDo", "description": "doc preview test"}).insert()
 
