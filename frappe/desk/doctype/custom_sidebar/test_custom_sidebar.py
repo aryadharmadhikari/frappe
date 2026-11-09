@@ -681,6 +681,8 @@ class TestOnlyTheOwnersLayerHoldsAPrivatePage(CustomizationTestCase):
 
 
 class TestTheModelSaysWhatItMeans(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_the_old_tables_are_gone(self):
 		"""One child table serves base, site and user, so the preference table and the separate
 		added-items table have nothing left to hold.
