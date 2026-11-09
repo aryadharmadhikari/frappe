@@ -6,6 +6,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestSyncJson(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_an_app_file_is_found_under_a_hyphenated_folder(self):
 		studio_folder = frappe.get_app_source_path("frappe", "studio")
 		self.assertEqual(
