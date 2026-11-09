@@ -14,6 +14,8 @@ from frappe.utils.print_format import (
 
 
 class TestBulkPdfLimits(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		self.addCleanup(lambda: frappe.db.set_single_value("Print Settings", "max_bulk_print_docs", 0))
 		self.addCleanup(
