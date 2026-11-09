@@ -10,6 +10,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestInstalledApplications(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_order_change(self):
 		update_installed_apps_order(["frappe"])
 		self.assertRaises(InvalidAppOrder, update_installed_apps_order, [])
