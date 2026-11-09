@@ -72,6 +72,8 @@ class TestHTMLDiff(UnitTestCase):
 
 
 class TestVersion(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_onload_generates_html_diffs_for_multiline(self):
 		"""Test onload generates HTML diffs for multiline changes."""
 		version = frappe.get_doc(
