@@ -30,6 +30,8 @@ def skip_if_redis_version_lt(version):
 
 
 class TestRedisAuth(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	@skip_if_redis_version_lt("6.0")
 	@patch.dict(frappe.conf, {"bench_id": "test_bench", "use_rq_auth": False})
 	def test_rq_gen_acllist(self):
