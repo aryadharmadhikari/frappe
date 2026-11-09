@@ -6,6 +6,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestNote(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def insert_note(self):
 		frappe.db.delete("Version")
 		frappe.db.delete("Note")
