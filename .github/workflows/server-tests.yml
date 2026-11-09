@@ -38,9 +38,39 @@ jobs:
           REPO_NAME: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  setup:
+    name: Setup MariaDB
+    needs: checkrun
+    if: ${{ needs.checkrun.outputs.build == 'strawberry' }}
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: "production"
+      PYTHONWARNINGS: "module,ignore:::babel.messages.extract"
+      DB_ROOT_PASSWORD: db_root
+    services:
+      mariadb:
+        image: mariadb:11.8
+        ports:
+          - 3306:3306
+        options: --health-cmd="healthcheck.sh --connect --innodb_initialized" --health-interval=5s --health-timeout=2s --health-retries=3 --tmpfs=/var/lib/mysql:rw,noexec,nosuid,size=2g
+        env:
+          MARIADB_ROOT_PASSWORD: ${{ env.DB_ROOT_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+        name: Environment Setup
+        with:
+          python-version: '3.14'
+          node-version: 24
+          disable-socketio: true
+          db-root-password: ${{ env.DB_ROOT_PASSWORD }}
+          db: mariadb
+        env:
+          PYTHONWARNINGS: "ignore:Unimplemented abstract methods {'locate_file'}:DeprecationWarning"
+
   test:
     name: Integration
-    needs: checkrun
+    needs: [checkrun, setup]
     if: ${{ needs.checkrun.outputs.build == 'strawberry' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -84,6 +114,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
+        if: ${{ matrix.db == 'postgres' }}
         name: Environment Setup
         with:
           python-version: '3.14'
@@ -251,7 +282,7 @@ jobs:
   # TIP: Require this single check in branch protection, e.g. Server / Success
   success:
     name: Server Success
-    needs: [test, migrate]
+    needs: [setup, test, migrate]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -259,6 +290,7 @@ jobs:
         shell: python
         run: |
           stati = [
+            '${{ needs.setup.result }}',
             '${{ needs.test.result }}',
             '${{ needs.migrate.result }}',
           ]
