@@ -949,6 +949,8 @@ class TestPrintDesignerConverter(IntegrationTestCase):
 class TestPrintFormatChildTableVisibility(IntegrationTestCase):
 	"""Per-row and per-column conditional visibility for child Table fields."""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	FORMAT_NAME = "_Test Child Table Visibility"
 
 	def setUp(self):
@@ -1070,6 +1072,8 @@ class TestPrintFormatChildTableVisibility(IntegrationTestCase):
 
 class TestPrintFormatDraft(IntegrationTestCase):
 	"""The builder parks edits in draft_data; only Save & Apply touches what prints."""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	def setUp(self):
 		self.pf = frappe.get_doc(
