@@ -6,6 +6,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestDeletedDocument(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_metadata_retention(self):
 		frappe.set_user("Administrator")
 		doc = frappe.get_doc({"doctype": "Note", "title": "Test Note", "content": "Test Content"}).insert()
