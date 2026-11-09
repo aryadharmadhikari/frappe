@@ -7,6 +7,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestUserDoctypePermissions(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_custom_docperm_without_doctype(self):
 		role = frappe.get_doc({"doctype": "Role", "role_name": "_Test Orphan Perm Role"}).insert()
 
