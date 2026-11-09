@@ -39,7 +39,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   setup:
-    name: Setup MariaDB
+    name: Setup (${{ matrix.db }})
     needs: checkrun
     if: ${{ needs.checkrun.outputs.build == 'strawberry' }}
     runs-on: ubuntu-latest
@@ -47,7 +47,22 @@ jobs:
       NODE_ENV: "production"
       PYTHONWARNINGS: "module,ignore:::babel.messages.extract"
       DB_ROOT_PASSWORD: db_root
+    strategy:
+      fail-fast: false
+      matrix:
+        db: ${{ fromJson(needs.checkrun.outputs.run_postgres == 'true' && '["mariadb", "postgres"]' || '["mariadb"]') }}
     services:
+      postgres:
+        image: ${{ matrix.db == 'postgres' && 'postgres:18.0' || '' }}
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_PASSWORD: travis
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 3
       mariadb:
         image: mariadb:11.8
         ports:
@@ -64,7 +79,7 @@ jobs:
           node-version: 24
           disable-socketio: true
           db-root-password: ${{ env.DB_ROOT_PASSWORD }}
-          db: mariadb
+          db: ${{ matrix.db }}
         env:
           PYTHONWARNINGS: "ignore:Unimplemented abstract methods {'locate_file'}:DeprecationWarning"
 
@@ -113,17 +128,6 @@ jobs:
           - 3000:80
     steps:
       - uses: actions/checkout@v7
-      - uses: ./.github/actions/setup
-        if: ${{ matrix.db == 'postgres' }}
-        name: Environment Setup
-        with:
-          python-version: '3.14'
-          node-version: 24
-          disable-socketio: true
-          db-root-password: ${{ env.DB_ROOT_PASSWORD }}
-          db: ${{ matrix.db }}
-        env:
-          PYTHONWARNINGS: "ignore:Unimplemented abstract methods {'locate_file'}:DeprecationWarning"
 
       - name: Run Tests
         run: |
