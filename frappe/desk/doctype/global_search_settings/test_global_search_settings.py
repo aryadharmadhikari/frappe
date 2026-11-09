@@ -21,6 +21,8 @@ class IntegrationTestGlobalSearchSettings(IntegrationTestCase):
 	Use this class for testing interactions between multiple components.
 	"""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_reset_requires_write_permission(self):
 		with test_user(roles=["Desk User"]) as user, self.set_user(user.name):
 			self.assertRaises(frappe.PermissionError, reset_global_search_settings_doctypes)
