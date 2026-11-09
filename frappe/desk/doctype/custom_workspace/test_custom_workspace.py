@@ -52,6 +52,8 @@ def make_customization(**values):
 class TestCustomWorkspaceUnit(IntegrationTestCase):
 	"""Pure merge logic on in-memory docs (no DB / link validation)."""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_content_snapshot_is_shown_verbatim(self):
 		doc = make_base_doc()
 		snapshot = [BASE_CONTENT[0]]  # the site dropped "My Notes" and kept only "My ToDos"
@@ -118,6 +120,8 @@ class TestCustomWorkspaceUnit(IntegrationTestCase):
 
 
 class TestCustomWorkspaceIntegration(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	WORKSPACE = "WC Integration Test"
 
 	def setUp(self):
