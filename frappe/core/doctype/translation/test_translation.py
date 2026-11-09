@@ -6,6 +6,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestTranslation(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		frappe.db.delete("Translation")
 
