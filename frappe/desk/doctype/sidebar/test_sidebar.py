@@ -235,6 +235,8 @@ class TestItemIdentity(IntegrationTestCase):
 
 	"""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_a_linked_row_is_identified_by_its_columns(self):
 		"""No hash and no stored id: the value is the columns, which leaves the link column free to be
 		repaired by an ordinary Dynamic Link rename.
@@ -477,6 +479,8 @@ class TestSidebarIsNamedByItsTitle(IntegrationTestCase):
 
 	"""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	MODULE = "Test Sidebar Naming Module"
 	DEALS = "Test Sidebar Deals"
 	LEADS = "Test Sidebar Leads"
@@ -689,6 +693,8 @@ class TestSidebarTitleIsRoutable(IntegrationTestCase):
 	The rule is only about characters a path cannot carry. It says nothing about the module: a
 	module may still own several sidebars, and the second one is a shell with a URL of its own.
 	"""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	MODULE = "Test Sidebar Routing Module"
 	SECOND = "Test Sidebar Second Shell"
@@ -1058,6 +1064,8 @@ class TestCanonicalShellOfASystemOrSharedPage(IntegrationTestCase):
 	a shared page still has to open somewhere when nothing states a shell.
 	"""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	SIDEBARS = shell_payload({"Build": {"lists": [("Page", "desktop", "apps")]}, "Printing": {}})
 
 	def build(self):
@@ -1097,6 +1105,8 @@ class TestCanonicalShellOfASystemOrSharedPage(IntegrationTestCase):
 
 class TestCanonicalShellPayload(IntegrationTestCase):
 	"""The whole map, against the site as it stands."""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	@staticmethod
 	def build(with_home=False):
@@ -2086,6 +2096,8 @@ class TestNothingWritesASidebar(IntegrationTestCase):
 
 	"""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		frappe.set_user("Administrator")
 
@@ -2123,6 +2135,8 @@ class TestComputedSidebarBase(IntegrationTestCase):
 	fresh, and the cache in front of it has to be dropped the moment the module's contents change.
 
 	"""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	def setUp(self):
 		frappe.set_user("Administrator")
@@ -2715,6 +2729,8 @@ class TestPrivateShell(IntegrationTestCase):
 	whatever module each was filed under, so two people standing on `/desk/private` see two
 	different sidebars and neither can arrange the other's.
 	"""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	def setUp(self):
 		frappe.set_user("Administrator")
