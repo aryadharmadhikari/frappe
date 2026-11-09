@@ -14,6 +14,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestStudioComponent(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_component_id_must_scrub_to_a_single_file_name(self):
 		component = frappe.get_doc(doctype="Studio Component", component_name="../Outside")
 		self.assertRaises(frappe.ValidationError, component.insert)
