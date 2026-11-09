@@ -45,6 +45,8 @@ class NonClassResolver:
 
 
 class TestControllerResolution(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_resolve_controller_returns_the_class_itself_or_a_subclass(self):
 		for declared, resolved in ((Plain, Plain), (Declared, Concrete), (SelfResolver, SelfResolver)):
 			with self.subTest(declared=declared.__name__):
