@@ -29,6 +29,8 @@ MAINTENANCE_FLAGS = (
 
 
 class TestDisabledAppPermissionConditions(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_no_condition_when_nothing_is_disabled(self):
 		with patch("frappe.app_state.get_disabled_modules", return_value=set()):
 			self.assertIsNone(get_module_permission_query_conditions("Administrator", doctype="Print Format"))
