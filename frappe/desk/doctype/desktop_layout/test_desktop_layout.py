@@ -12,6 +12,8 @@ USER = "test-desktop-layout@example.com"
 
 
 class IntegrationTestDesktopLayout(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		super().setUp()
 		if not frappe.db.exists("User", USER):
