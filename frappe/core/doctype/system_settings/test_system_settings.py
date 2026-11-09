@@ -25,6 +25,8 @@ class TestSystemSettings(IntegrationTestCase):
 
 
 class TestClassicChartsOnUpgrade(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	PATCH = "frappe.patches.v17_0.keep_existing_sites_on_classic_charts"
 
 	def setUp(self):
