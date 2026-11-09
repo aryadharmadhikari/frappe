@@ -23,6 +23,8 @@ IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 
 
 class TestWebFormRequest(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		self.user = "test@example.com"
 		user = frappe.get_doc("User", self.user)
