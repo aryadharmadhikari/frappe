@@ -39,6 +39,8 @@ def read(path: str) -> str:
 
 
 class TestTheRetiringBatch(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
