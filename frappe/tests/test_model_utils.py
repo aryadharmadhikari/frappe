@@ -7,6 +7,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestModelUtils(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_get_fetch_values(self):
 		doctype = "ToDo"
 
