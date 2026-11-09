@@ -7,6 +7,8 @@ from frappe.website.doctype.website_settings.website_settings import get_website
 
 
 class TestWebsiteSettings(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_child_items_in_top_bar(self):
 		ws = frappe.get_doc("Website Settings")
 		ws.append(
