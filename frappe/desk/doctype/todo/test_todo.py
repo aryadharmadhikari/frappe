@@ -10,6 +10,8 @@ EXTRA_TEST_RECORD_DEPENDENCIES = ["User", "Web Page"]
 
 
 class TestToDo(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_delete(self):
 		todo = frappe.get_doc(doctype="ToDo", description="test todo", assigned_by="Administrator").insert()
 
