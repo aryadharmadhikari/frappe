@@ -9,6 +9,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestListView(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		if frappe.db.exists("List View Settings", "DocType"):
 			frappe.delete_doc("List View Settings", "DocType")
