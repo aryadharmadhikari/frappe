@@ -6,6 +6,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestSMSSettings(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		self.sms_settings = frappe.get_single("SMS Settings")
 		self._allowed_roles = self.sms_settings.get("allowed_roles")
