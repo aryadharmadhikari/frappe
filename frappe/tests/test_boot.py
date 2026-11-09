@@ -146,6 +146,8 @@ class TestDeskViewModules(IntegrationTestCase):
 	pass is asserted below through the report it is the only one to answer.
 	"""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		frappe.set_user("Administrator")
 
@@ -238,6 +240,8 @@ class TestDeskViewModules(IntegrationTestCase):
 
 class TestAllowedDashboards(IntegrationTestCase):
 	"""`get_allowed_dashboards` reads the child tables, not a document per dashboard."""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	def dashboard(self, **kwargs):
 		return frappe.get_doc(doctype="Dashboard", dashboard_name=frappe.generate_hash(), **kwargs).insert()
