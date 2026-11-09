@@ -8,6 +8,8 @@ from frappe.utils.data import add_to_date, today
 
 
 class TestDocumentLocks(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_locking(self):
 		todo = frappe.get_doc(doctype="ToDo", description="test").insert()
 		todo_1 = frappe.get_doc("ToDo", todo.name)
