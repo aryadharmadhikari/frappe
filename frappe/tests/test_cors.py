@@ -16,6 +16,8 @@ HEADERS = (
 
 
 class TestCORS(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def make_request_and_test(self, origin="http://example.com", absent=False):
 		self.origin = origin
 
