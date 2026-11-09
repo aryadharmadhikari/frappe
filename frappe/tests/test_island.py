@@ -22,6 +22,8 @@ def draws_the_chart(doc, method=None):
 class TestUiIslandsRegistry(IntegrationTestCase):
 	"""A build registers an island by writing its asset key."""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def patch_assets_json(self, assets):
 		return patch("frappe.utils.island.get_assets_json", return_value=assets)
 
@@ -69,11 +71,15 @@ class TestUiIslandsRegistry(IntegrationTestCase):
 
 
 class TestPageIslandName(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_the_name_carries_the_app_and_the_page(self):
 		self.assertEqual(page_island_name("insights", "sales-dashboard"), "insights.page.sales-dashboard")
 
 
 class TestIslandAssets(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def patch_assets_json(self, assets):
 		return patch("frappe.utils.island.get_assets_json", return_value=assets)
 
@@ -111,6 +117,8 @@ class TestIslandAssets(IntegrationTestCase):
 
 class TestIslandOnLoad(IntegrationTestCase):
 	"""An app claims a desk document with a `doc_events` onload handler."""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	def patch_doc_events(self, doc_events):
 		# `frappe.get_doc_hooks` caches its expansion on `frappe.local`, so the
