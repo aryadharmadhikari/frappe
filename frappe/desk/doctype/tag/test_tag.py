@@ -5,6 +5,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestTag(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self) -> None:
 		frappe.db.delete("Tag")
 		frappe.db.sql("UPDATE `tabDocType` set _user_tags=''")
