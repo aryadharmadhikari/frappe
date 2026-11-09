@@ -7,6 +7,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestModuleProfile(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		frappe.delete_doc_if_exists("Module Profile", "_Test Module Profile", force=1)
 		frappe.delete_doc_if_exists("Module Profile", "_Test Module Profile 2", force=1)
