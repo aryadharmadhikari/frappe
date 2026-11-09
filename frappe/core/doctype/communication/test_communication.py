@@ -18,6 +18,8 @@ if TYPE_CHECKING:
 
 
 class TestCommunication(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_email(self):
 		valid_email_list = [
 			"Full Name <full@example.com>",
