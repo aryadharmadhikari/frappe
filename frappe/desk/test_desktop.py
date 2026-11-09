@@ -7,6 +7,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestDesktop(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_get_desktop_page_accepts_native_dict(self):
 		workspace = frappe.db.get_value("Workspace", {"public": 1}, "name")
 		# page as a native dict instead of a JSON string (frappe.parse_json passthrough)
