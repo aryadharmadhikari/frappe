@@ -12,6 +12,8 @@ from frappe.tests.utils import make_test_objects, toggle_test_mode
 
 
 class TestEvent(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		frappe.db.delete("Event")
 		make_test_objects("Event", reset=True)
