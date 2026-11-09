@@ -315,6 +315,8 @@ HIDE = {"has_permission": {"Comment": ["frappe.core.doctype.comment.test_comment
 class TestCommentReadersHonourHooks(IntegrationTestCase):
 	"""The readers that fetch with permissions ignored must still run the Comment hooks."""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		self.todo = frappe.get_doc(doctype="ToDo", description="hook test").insert()
 		self.comment = self.todo.add_comment("Comment", "internal discussion").name
