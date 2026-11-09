@@ -30,6 +30,8 @@ def get_theme_file(theme):
 
 
 class TestWebsiteTheme(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_website_theme(self):
 		with website_theme_fixture(
 			google_font="Inter",
