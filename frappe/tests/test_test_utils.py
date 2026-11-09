@@ -9,7 +9,34 @@ from frappe.utils.data import now_datetime
 
 
 class TestTestUtils(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
 	SHOW_TRANSACTION_COMMIT_WARNINGS = True
+
+	def test_rollback_after_each_test(self):
+		key = frappe.generate_hash()
+
+		class RollbackCase(IntegrationTestCase):
+			ROLLBACK_AFTER_EACH_TEST = True
+
+			def setUp(self):
+				frappe.db.set_default(key, "set by setup")
+				if self._testMethodName == "test_failed_setup":
+					raise RuntimeError("setup failed")
+
+			def test_success(self):
+				frappe.db.set_default(key, "set by test")
+
+			def test_failed_setup(self):
+				pass
+
+		result = RollbackCase("test_success").run()
+		self.assertTrue(result.wasSuccessful(), result.errors)
+		self.assertIsNone(frappe.db.get_default(key))
+
+		result = RollbackCase("test_failed_setup").run()
+		self.assertEqual(len(result.errors), 1)
+		self.assertIn("RuntimeError: setup failed", result.errors[0][1])
+		self.assertIsNone(frappe.db.get_default(key))
 
 	def test_document_assertions(self):
 		currency = frappe.new_doc("Currency")
@@ -97,6 +124,8 @@ class TestCompatAssertQueryCount(IntegrationTestCase):
 	LazyMogrify and Postgres a LazyDecode — so a MariaDB-only test cannot catch a
 	regression here.
 	"""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	def compat_case(self):
 		from frappe.tests.utils import FrappeTestCase
