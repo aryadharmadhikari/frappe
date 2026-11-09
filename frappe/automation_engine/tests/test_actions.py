@@ -492,6 +492,8 @@ class TestRunScript(IntegrationTestCase):
 class TestParamControls(IntegrationTestCase):
 	"""The schema, not the builder, decides which editor a param needs."""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	KNOWN_CONTROLS = (USER_CONTROL,)
 
 	def test_a_json_param_with_options_declares_its_control(self):
