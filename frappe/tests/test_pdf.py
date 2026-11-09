@@ -89,6 +89,8 @@ def record_print(**kwargs):
 
 
 class TestPdf(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	@property
 	def html(self):
 		return """<style>
@@ -636,6 +638,8 @@ class TestPdf(IntegrationTestCase):
 class TestChromePdfGeometry(IntegrationTestCase):
 	"""Unit tests for Browser paper geometry — no chromium process involved."""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def make_browser(self, options, header_height=None, footer_height=None):
 		from types import SimpleNamespace
 
@@ -767,6 +771,8 @@ class TestChromePdfGeometry(IntegrationTestCase):
 
 class TestChromeCdpReliability(IntegrationTestCase):
 	"""Unit tests for CDP failure handling — no chromium process involved."""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	def make_client(self):
 		from frappe.utils.chromium.cdp_connection import CDPSocketClient
