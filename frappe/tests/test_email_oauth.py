@@ -215,6 +215,8 @@ class TestBoot(IntegrationTestCase):
 
 
 class TestOneClickServices(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self) -> None:
 		self.enterContext(self.set_user(create_user(USER).name))
 		self.enterContext(patch.dict(frappe.conf, V2))
