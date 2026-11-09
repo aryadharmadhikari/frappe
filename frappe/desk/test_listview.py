@@ -6,6 +6,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestListView(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_group_by_count_accepts_filters_as_list(self):
 		# the client sends current_filters as a list of [doctype, field, operator, value]
 		# arrays; type validation must accept it, not just a JSON string
