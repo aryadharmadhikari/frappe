@@ -3,6 +3,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestDocStatus(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_draft(self):
 		self.assertEqual(DocStatus(0), DocStatus.DRAFT)
 
