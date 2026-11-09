@@ -25,6 +25,8 @@ EXTRA_TEST_RECORD_DEPENDENCIES = ["Web Form"]
 
 
 class TestWebForm(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		frappe.conf.disable_website_cache = True
 
