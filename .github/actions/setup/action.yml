@@ -296,7 +296,7 @@ runs:
       DB: ${{ inputs.db }}
       MYSQL_PWD: ${{ inputs.db-root-password }}
     run: |
-      tar -xzf "$SNAPSHOT_DIR/bench.tar.gz"
+      tar -xf "$SNAPSHOT_DIR/bench.tar"
       mkdir -p config/pids logs sites/test_site/logs
       if [ "$DB" == "mariadb" ]; then
         mariadb -h 127.0.0.1 -u root -e "

@@ -12,5 +12,5 @@ lsb_release -rs > "$SNAPSHOT_DIR/ubuntu-version"
 python -c 'import platform; print(platform.python_version())' > "$SNAPSHOT_DIR/python-version"
 node -p 'process.versions.node' > "$SNAPSHOT_DIR/node-version"
 tar --exclude='sites/*/logs' --exclude='sites/*/private/backups' \
-  --exclude='config/pids' --exclude='config/*.pid' -cf - \
-  apps env sites config Procfile chromium | gzip -1 > "$SNAPSHOT_DIR/bench.tar.gz"
+  --exclude='config/pids' --exclude='config/*.pid' -cf "$SNAPSHOT_DIR/bench.tar" \
+  apps env sites config Procfile chromium
