@@ -12,6 +12,8 @@ TEST_KEY = "42"
 
 
 class TestClientCache(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self) -> None:
 		frappe.client_cache.delete_value(TEST_KEY)
 		return super().setUp()
