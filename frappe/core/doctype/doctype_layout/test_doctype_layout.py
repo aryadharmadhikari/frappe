@@ -11,6 +11,8 @@ TEST_DOCTYPE = "ToDo"
 
 
 class TestDocTypeLayout(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		# Remove any leftover test layouts from a previous run
 		for name in frappe.get_all("DocType Layout", filters={"title": ["like", "_Test%"]}, pluck="name"):
