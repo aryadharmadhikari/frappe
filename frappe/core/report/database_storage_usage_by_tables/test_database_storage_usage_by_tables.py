@@ -10,6 +10,8 @@ from frappe.tests.test_query_builder import db_type_is, run_only_if
 
 
 class TestDBUsageReport(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_basic_query(self):
 		_, data = execute()
 		tables = [d.table for d in data]
