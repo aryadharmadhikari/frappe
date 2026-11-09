@@ -9,6 +9,8 @@ from frappe.utils import set_request
 
 
 class TestAssign(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_remove_multiple_accepts_native_list(self):
 		frappe.set_user("Administrator")
 		frappe.db.set_value("User", "Administrator", "bulk_actions", 1)
