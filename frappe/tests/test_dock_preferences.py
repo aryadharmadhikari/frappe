@@ -1776,6 +1776,8 @@ class TestTheAppsEntrySet(IntegrationTestCase):
 
 	"""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def app_order(self, app: str = "frappe") -> list[str]:
 		return get_app_modules(app)
 
@@ -2249,6 +2251,8 @@ class TestAddModule(IntegrationTestCase):
 	"""Add on the dock creates a module the site owns, placed in the app's dock, with a page of its
 	own to open on, so it is on the desk the moment it exists. A module is the site's, so only the
 	dock for everyone creates one."""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	MODULE = "Test Dock Added Module"
 	MANAGER = "test-dock-add-module@example.com"
