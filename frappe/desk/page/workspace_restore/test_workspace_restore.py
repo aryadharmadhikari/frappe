@@ -66,6 +66,8 @@ def make_base_doc():
 class TestReplay(IntegrationTestCase):
 	"""The fold from Version rows to a delta payload, on in-memory docs."""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_layout_comes_from_the_newest_content_change(self):
 		first = version_row(changed=[["content", dumps(BASE_CONTENT), dumps([*BASE_CONTENT, MESSAGE_BLOCK])]])
 		second = version_row(
