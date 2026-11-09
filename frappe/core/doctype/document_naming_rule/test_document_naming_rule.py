@@ -7,6 +7,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestDocumentNamingRule(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_naming_rule_by_series(self):
 		naming_rule = frappe.get_doc(
 			doctype="Document Naming Rule", document_type="ToDo", prefix="test-todo-", prefix_digits=5
