@@ -8,7 +8,7 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestDefaults(IntegrationTestCase):
-	ROLLBACK_AFTER_EACH_TEST = True
+	ISOLATION_MODE = "rollback"
 
 	def setUp(self):
 		super().setUp()

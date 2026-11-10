@@ -8,7 +8,7 @@ from frappe.utils import fmt_money
 
 
 class TestFmtMoney(IntegrationTestCase):
-	ROLLBACK_AFTER_EACH_TEST = True
+	ISOLATION_MODE = "rollback"
 
 	def setUp(self):
 		super().setUp()
