@@ -64,6 +64,8 @@ EXPECTED_PAYLOADS = {
 
 
 class TestNotificationWebhookURL(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		super().setUp()
 		frappe.db.savepoint("notification_webhook_test")
