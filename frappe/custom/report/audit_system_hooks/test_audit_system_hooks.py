@@ -7,6 +7,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestAuditSystemHooksReport(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_basic_query(self):
 		_, data = execute()
 		for row in data:
