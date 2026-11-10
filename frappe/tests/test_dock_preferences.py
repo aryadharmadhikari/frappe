@@ -1900,10 +1900,6 @@ class TestTheExportRoad(IntegrationTestCase):
 	The app used here is invented, so nothing is written into a real app on the bench: the export is
 	pointed at a temporary directory standing in for `frappe.get_app_path(app)`.
 
-	It is not a `DockTestCase`, and its modules are its own. `remove_orphan_entities` commits, so
-	anything this suite writes outlives the framework's rollback, which means the fixtures have to be
-	torn down by hand and cannot be the shared class-level ones the other suites use.
-
 	"""
 
 	APP = "zz-dock-export"
@@ -1920,18 +1916,10 @@ class TestTheExportRoad(IntegrationTestCase):
 		self.make_modules()
 
 	def tearDown(self):
-		"""Clean up by hand and before the commit, not through `addCleanup`.
-
-		`remove_orphan_entities` commits, so everything this suite has written is already durable by
-		the time a test ends. Cleanups run after `tearDown`, so anything deleted there would be
-		deleted after the commit that was supposed to make the deletion stick.
-
-		"""
 		frappe.set_user("Administrator")
 		frappe.delete_doc("User", self.DESK_USER, force=True, ignore_missing=True)
 		clear_arrangements_for(self.APP)
 		self.drop_modules()
-		frappe.db.commit()  # nosemgrep
 		super().tearDown()
 
 	def make_modules(self):
@@ -2158,7 +2146,8 @@ class TestTheExportRoad(IntegrationTestCase):
 		mark_as_standard(self.APP)
 
 		shutil.rmtree(os.path.dirname(self.exported()))
-		remove_orphan_entities(["Dock"])
+		with patch.object(frappe.db, "commit"):
+			remove_orphan_entities(["Dock"])
 
 		self.assertFalse(frappe.db.exists("Dock", {"app": self.APP, "standard": 1}))
 
@@ -2168,7 +2157,8 @@ class TestTheExportRoad(IntegrationTestCase):
 		self.author(self.ONE)
 		save_user_dock(self.APP, payload(added(sidebar(self.TWO))))
 
-		remove_orphan_entities(["Dock"])
+		with patch.object(frappe.db, "commit"):
+			remove_orphan_entities(["Dock"])
 
 		self.assertTrue(frappe.db.exists("Dock", {"app": self.APP, "standard": 0, "user": ""}))
 

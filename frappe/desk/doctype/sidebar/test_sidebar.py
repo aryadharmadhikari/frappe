@@ -396,7 +396,8 @@ class TestSidebarDocument(IntegrationTestCase):
 		from frappe.model.sync import remove_orphan_entities
 
 		make_sidebar(MODULE)
-		remove_orphan_entities("Sidebar")
+		with patch.object(frappe.db, "commit"):
+			remove_orphan_entities("Sidebar")
 		self.assertTrue(frappe.db.exists("Sidebar", MODULE))
 
 	def test_deleting_the_module_removes_its_sidebar(self):
@@ -1276,11 +1277,6 @@ class TestSidebarStandard(IntegrationTestCase):
 		self.clear_module_content()
 		with no_developer_mode():
 			frappe.delete_doc("Module Def", MODULE, force=True, ignore_missing=True)
-		# `remove_orphan_entities` commits, so anything these tests wrote before it is already
-		# durable and the framework's rollback will not undo it. Commit the cleanup too, or a
-		# standard row for a module with no folder outlives the test and breaks every later
-		# save of it.
-		frappe.db.commit()  # nosemgrep
 		super().tearDown()
 
 	def clear_module_content(self):
@@ -1450,7 +1446,8 @@ class TestSidebarStandard(IntegrationTestCase):
 			self.with_content()
 			name = mark_as_standard(MODULE)
 
-			remove_orphan_entities("Sidebar")
+			with patch.object(frappe.db, "commit"):
+				remove_orphan_entities("Sidebar")
 			self.assertTrue(frappe.db.exists("Sidebar", name))
 
 	def test_the_mark_fails_when_the_export_wrote_no_file(self):
@@ -1625,9 +1622,6 @@ class TestAppRootedSidebar(IntegrationTestCase):
 	def tearDown(self):
 		frappe.set_user("Administrator")
 		self.clear_sidebars()
-		# `remove_orphan_entities` commits, so a row written before it is already durable and
-		# the framework's rollback will not take it back out.
-		frappe.db.commit()  # nosemgrep
 		super().tearDown()
 
 	def clear_sidebars(self):
@@ -1767,7 +1761,8 @@ class TestAppRootedSidebar(IntegrationTestCase):
 		doc = self.make()
 		shutil.rmtree(os.path.dirname(doc.exported_file_path()))
 
-		remove_orphan_entities("Sidebar")
+		with patch.object(frappe.db, "commit"):
+			remove_orphan_entities("Sidebar")
 
 		self.assertFalse(frappe.db.exists("Sidebar", doc.name))
 
@@ -1777,7 +1772,8 @@ class TestAppRootedSidebar(IntegrationTestCase):
 
 		doc = self.make(standard=0)
 
-		remove_orphan_entities("Sidebar")
+		with patch.object(frappe.db, "commit"):
+			remove_orphan_entities("Sidebar")
 
 		self.assertTrue(frappe.db.exists("Sidebar", doc.name))
 
@@ -2276,9 +2272,6 @@ class TestAppSidebarLayer(IntegrationTestCase):
 		self.clear_module_content()
 		with no_developer_mode():
 			frappe.delete_doc("Module Def", MODULE, force=True, ignore_missing=True)
-		# `remove_orphan_entities` commits, so anything written before it is already durable and
-		# the framework's rollback will not undo it. See `TestSidebarStandard.tearDown`.
-		frappe.db.commit()  # nosemgrep
 		super().tearDown()
 
 	def clear_module_content(self):
