@@ -8,6 +8,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestPropertySetter(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_bulk_delete_property_setters(self):
 		doctype = "ToDo"
 		fieldname = "status"
