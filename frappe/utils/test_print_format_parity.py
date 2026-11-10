@@ -254,6 +254,8 @@ class TestPrintSurfaceMarkupContract(UnitTestCase):
 
 
 class TestPrintSurfaceParity(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def _make_contact_format(self):
 		name = f"_Test PFP {frappe.generate_hash(length=6)}"
 		doc = frappe.get_doc(
