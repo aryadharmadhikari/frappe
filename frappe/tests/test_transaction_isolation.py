@@ -4,6 +4,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
+from rq import Queue
+
 import frappe
 from frappe.database import get_db
 from frappe.testing.discovery import TestRunnerError
@@ -83,11 +85,13 @@ class TestTransactionIsolation(IntegrationTestCase):
 			lambda: frappe.db.sql("commit"),
 			lambda: frappe.db.sql("select 1; commit"),
 			lambda: frappe.db.sql("set autocommit = 1"),
+			lambda: frappe.db.sql("create table forbidden (id integer)"),
 			lambda: frappe.db.sql_ddl("create table forbidden (id integer)"),
 			lambda: frappe.db._conn.commit(),
 			lambda: frappe.db._conn.cursor().execute("rollback"),
 			lambda: frappe.connect(),
 			lambda: sqlite3.connect(":memory:"),
+			lambda: Queue(connection=frappe.cache).enqueue_job(object()),
 		)
 
 		class RollbackCase(IntegrationTestCase):

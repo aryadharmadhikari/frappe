@@ -9,6 +9,7 @@ from weakref import WeakSet
 import psycopg
 import pymysql
 import sqlparse
+from rq import Queue
 
 import frappe
 from frappe.database.database import Database
@@ -87,6 +88,7 @@ class TransactionGuard(ExitStack):
 				self.enter_context(patch.object(target, name, self.reject_connection))
 			self.enter_context(patch.object(LogDatabase, "connect", connect_isolated_log))
 			self.enter_context(patch.object(Database, "check_transaction_status", check_connection_owner))
+			self.enter_context(patch.object(Queue, "enqueue_job", self.reject_enqueue))
 			try:
 				import MySQLdb
 			except ImportError:
@@ -200,6 +202,9 @@ class TransactionGuard(ExitStack):
 
 	def reject_connection(self, *args, **kwargs):
 		self.reject("opening another database connection")
+
+	def reject_enqueue(self, *args, **kwargs):
+		self.reject("dispatching a job outside the test transaction")
 
 
 class GuardedConnection:
