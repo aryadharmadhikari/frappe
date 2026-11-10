@@ -10,6 +10,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestFrappeLocal(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_basic_local(self):
 		ns = frappe.local
 		ns.foo = 0
