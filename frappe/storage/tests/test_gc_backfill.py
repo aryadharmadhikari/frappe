@@ -48,6 +48,8 @@ def gc_cutoff():
 class TestCollectGarbage(IntegrationTestCase):
 	"""GC on orphan blobs. Uses fake() so no bytes touch the site dirs."""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def put(self, content=None):
 		with storage_v2():
 			blob = put_blob(io.BytesIO(content or unique_bytes()))
@@ -260,6 +262,8 @@ class TestCollectGarbage(IntegrationTestCase):
 
 class TestBackfill(IntegrationTestCase):
 	"""Backfill on synthetic legacy File rows with real files on disk."""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	def setUp(self):
 		super().setUp()
