@@ -6,6 +6,8 @@ from frappe.tests.utils import make_test_objects
 
 
 class TestDomain(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		make_test_objects("Email Domain", reset=True)
 
