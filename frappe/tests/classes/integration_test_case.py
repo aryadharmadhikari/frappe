@@ -2,7 +2,7 @@ import copy
 import faulthandler
 import logging
 import sys
-from contextlib import AbstractContextManager, contextmanager
+from contextlib import AbstractContextManager, ExitStack, contextmanager
 from types import MappingProxyType
 
 import frappe
@@ -60,6 +60,22 @@ class IntegrationTestCase(UnitTestCase):
 		cls.addClassCleanup(_restore_ctx_locals, copy.deepcopy(frappe.local.flags))
 		cls.addClassCleanup(_rollback_db)
 
+		mode = cls._isolation_mode()
+		if mode != "reset":
+			cls._prepare_test_records()
+
+		if cls.ISOLATION_MODE in {"rollback", "savepoint"}:
+			guard = cls.enterClassContext(TransactionGuard(frappe.local.db))
+			cls.enterClassContext(guard.isolated_log_database())
+			cls._transaction_guard = guard
+			cls.addClassCleanup(delattr, cls, "_transaction_guard")
+			scope = TransactionScope(frappe.local.db, guard=guard, verify=mode == "savepoint")
+			cls.addClassCleanup(_close_isolation, scope)
+		cls._integration_test_case_class_setup_done = True
+		cls.addClassCleanup(delattr, cls, "_integration_test_case_class_setup_done")
+
+	@classmethod
+	def _prepare_test_records(cls):
 		# Create test record dependencies
 		cls._newly_created_test_records = []
 		if cls.doctype and cls.doctype not in frappe.local.test_objects:
@@ -78,17 +94,6 @@ class IntegrationTestCase(UnitTestCase):
 		if cls.SHOW_TRANSACTION_COMMIT_WARNINGS:
 			frappe.db.before_commit.add(_commit_watcher)
 
-		mode = cls._isolation_mode()
-		if cls.ISOLATION_MODE:
-			guard = cls.enterClassContext(TransactionGuard(frappe.local.db))
-			cls.enterClassContext(guard.isolated_log_database())
-			cls._transaction_guard = guard
-			cls.addClassCleanup(delattr, cls, "_transaction_guard")
-			scope = TransactionScope(frappe.local.db, guard=guard, verify=mode == "savepoint")
-			cls.addClassCleanup(_close_isolation, scope)
-		cls._integration_test_case_class_setup_done = True
-		cls.addClassCleanup(delattr, cls, "_integration_test_case_class_setup_done")
-
 	@classmethod
 	def tearDownClass(cls) -> None:
 		# Add any necessary teardown code here
@@ -103,7 +108,10 @@ class IntegrationTestCase(UnitTestCase):
 			frappe.local.test_isolation_failed = True
 
 	def _callSetUp(self):
-		if mode := self._isolation_mode():
+		mode = self._isolation_mode()
+		if mode == "reset":
+			self._set_up_reset_site()
+		elif mode:
 			self.addCleanup(_restore_test_locals, _capture_test_locals())
 			db = frappe.local.db
 			guard = self.__class__.__dict__.get("_transaction_guard")
@@ -118,6 +126,15 @@ class IntegrationTestCase(UnitTestCase):
 			scope = TransactionScope(db, savepoint=mode == "savepoint", guard=guard)
 			self.addCleanup(_close_isolation, scope)
 		super()._callSetUp()
+
+	def _set_up_reset_site(self):
+		from .reset import create_reset_site
+
+		self.ADMIN_PASSWORD = create_reset_site(self.enterContext(ExitStack()))
+		self.TEST_SITE = frappe.local.site
+		self._primary_connection = frappe.local.db
+		self._secondary_connection = None
+		self._prepare_test_records()
 
 	def _callCleanup(self, function, /, *args, **kwargs):
 		try:
@@ -135,10 +152,10 @@ class IntegrationTestCase(UnitTestCase):
 	def _isolation_mode(cls):
 		if cls.ISOLATION_MODE is None:
 			return "rollback" if cls.ROLLBACK_AFTER_EACH_TEST else None
-		if cls.ISOLATION_MODE not in {"rollback", "savepoint"}:
+		if cls.ISOLATION_MODE not in {"rollback", "savepoint", "reset"}:
 			raise ValueError(f"Invalid test isolation mode: {cls.ISOLATION_MODE}")
-		if cls.ISOLATION_MODE == "savepoint" and not cls.ISOLATION_REASON:
-			raise ValueError("Savepoint isolation requires an ISOLATION_REASON")
+		if cls.ISOLATION_MODE in {"savepoint", "reset"} and not cls.ISOLATION_REASON:
+			raise ValueError(f"{cls.ISOLATION_MODE} isolation requires an ISOLATION_REASON")
 		return cls.ISOLATION_MODE
 
 	def setUp(self) -> None:

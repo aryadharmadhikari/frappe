@@ -1,8 +1,10 @@
 import sqlite3
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import frappe
+from frappe.database import get_db
 from frappe.testing.suite import TestSuite
 from frappe.tests import IntegrationTestCase
 from frappe.tests.classes.transaction_guard import TransactionBoundaryError
@@ -10,6 +12,42 @@ from frappe.utils.logging import get_log_db
 
 
 class TestTransactionIsolation(IntegrationTestCase):
+	def test_reset_site_allows_a_commit_and_discards_the_database(self):
+		baseline = frappe.local.db
+		description = frappe.generate_hash()
+		paths = []
+
+		class ResetCase(IntegrationTestCase):
+			ISOLATION_MODE = "reset"
+			ISOLATION_REASON = "Verify that a second connection can see a committed document."
+
+			def setUp(self):
+				paths.append(Path(frappe.local.site_path).resolve())
+				self.assertIsNot(frappe.local.db, baseline)
+
+			def test_commit(self):
+				todo = frappe.get_doc(doctype="ToDo", description=description).insert()
+				callbacks = []
+				frappe.db.after_commit.add(lambda: callbacks.append(todo.name))
+				frappe.db.commit()
+				self.assertEqual(callbacks, [todo.name])
+				other = get_db(
+					socket=frappe.conf.db_socket,
+					host=frappe.conf.db_host,
+					port=frappe.conf.db_port,
+					user=frappe.conf.db_user,
+					password=frappe.conf.db_password,
+					cur_db_name=frappe.conf.db_name,
+				)
+				self.addCleanup(other.close)
+				self.assertEqual(other.get_value("ToDo", todo.name, "description"), description)
+
+		result = TestSuite([ResetCase("test_commit")]).run(unittest.TestResult())
+		self.assertTrue(result.wasSuccessful(), (result.failures, result.errors))
+		self.assertIs(frappe.local.db, baseline)
+		self.assertFalse(paths[0].exists())
+		self.assertFalse(frappe.db.exists("ToDo", {"description": description}))
+
 	def test_rejects_transaction_breakers_even_if_caught_by_the_test(self):
 		operations = (
 			lambda: frappe.db.commit(),
