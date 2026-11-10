@@ -12,6 +12,8 @@ from frappe.utils.data import is_html
 
 
 class TestAutoEmailReport(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_auto_email(self):
 		frappe.delete_doc("Auto Email Report", "Permitted Documents For User")
 
