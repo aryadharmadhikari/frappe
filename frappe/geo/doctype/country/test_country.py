@@ -21,6 +21,8 @@ def get_table_snapshot(doctype):
 
 
 class TestCountry(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_bulk_insert_correctness(self):
 		def clear_tables():
 			frappe.db.delete("Currency")
