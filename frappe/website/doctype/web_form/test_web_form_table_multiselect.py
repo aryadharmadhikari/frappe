@@ -4,7 +4,7 @@ import json
 
 import frappe
 from frappe.core.doctype.doctype.doctype import clear_permissions_cache
-from frappe.core.doctype.doctype.test_doctype import new_doctype
+from frappe.core.doctype.doctype.test_doctype import insert_test_doctype, new_doctype
 from frappe.permissions import add_permission, reset_perms
 from frappe.tests import IntegrationTestCase
 from frappe.website.doctype.web_form.web_form import (
@@ -24,83 +24,92 @@ UNTITLED_ROW = "Test WF MultiSelect Untitled Row"
 
 
 class TestWebFormTableMultiSelect(IntegrationTestCase):
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		new_doctype(
-			TARGET,
-			fields=[{"fieldname": "title", "fieldtype": "Data", "label": "Title", "unique": 1}],
-			autoname="field:title",
-		).insert(ignore_if_duplicate=True)
-		new_doctype(
-			ROW,
-			istable=1,
-			permissions=[],
-			fields=[{"fieldname": "target", "fieldtype": "Link", "label": "Target", "options": TARGET}],
-		).insert(ignore_if_duplicate=True)
-		# integer names shown by title: the branch that ships raw JSON
-		new_doctype(
-			NUMBERED,
-			fields=[{"fieldname": "title", "fieldtype": "Data", "label": "Title"}],
-			autoname="autoincrement",
-			title_field="title",
-			show_title_field_in_link=1,
-		).insert(ignore_if_duplicate=True)
-		new_doctype(
-			NUMBERED_ROW,
-			istable=1,
-			permissions=[],
-			fields=[{"fieldname": "target", "fieldtype": "Link", "label": "Target", "options": NUMBERED}],
-		).insert(ignore_if_duplicate=True)
-		# integer names with no title field: the branch that ships a joined string
-		new_doctype(
-			UNTITLED,
-			fields=[{"fieldname": "note", "fieldtype": "Data", "label": "Note"}],
-			autoname="autoincrement",
-		).insert(ignore_if_duplicate=True)
-		new_doctype(
-			UNTITLED_ROW,
-			istable=1,
-			permissions=[],
-			fields=[{"fieldname": "target", "fieldtype": "Link", "label": "Target", "options": UNTITLED}],
-		).insert(ignore_if_duplicate=True)
-		new_doctype(
-			PARENT,
-			fields=[
-				{"fieldname": "title", "fieldtype": "Data", "label": "Title"},
-				{
-					"fieldname": "targets",
-					"fieldtype": "Table MultiSelect",
-					"label": "Targets",
-					"options": ROW,
-				},
-				{
-					"fieldname": "numbers",
-					"fieldtype": "Table MultiSelect",
-					"label": "Numbers",
-					"options": NUMBERED_ROW,
-				},
-				{
-					"fieldname": "untitled",
-					"fieldtype": "Table MultiSelect",
-					"label": "Untitled",
-					"options": UNTITLED_ROW,
-				},
-			],
-		).insert(ignore_if_duplicate=True)
-		frappe.db.commit()
-
-	@classmethod
-	def tearDownClass(cls):
-		frappe.db.rollback()
-		for doctype in (PARENT, ROW, TARGET, NUMBERED_ROW, NUMBERED, UNTITLED_ROW, UNTITLED):
-			frappe.delete_doc("DocType", doctype, force=True)
-		frappe.db.commit()
-		super().tearDownClass()
-
 	def setUp(self):
+		super().setUp()
 		frappe.set_user("Administrator")
 		frappe.local.request = None
+		insert_test_doctype(
+			self,
+			new_doctype(
+				TARGET,
+				fields=[{"fieldname": "title", "fieldtype": "Data", "label": "Title", "unique": 1}],
+				autoname="field:title",
+			),
+		)
+		insert_test_doctype(
+			self,
+			new_doctype(
+				ROW,
+				istable=1,
+				permissions=[],
+				fields=[{"fieldname": "target", "fieldtype": "Link", "label": "Target", "options": TARGET}],
+			),
+		)
+		# integer names shown by title: the branch that ships raw JSON
+		insert_test_doctype(
+			self,
+			new_doctype(
+				NUMBERED,
+				fields=[{"fieldname": "title", "fieldtype": "Data", "label": "Title"}],
+				autoname="autoincrement",
+				title_field="title",
+				show_title_field_in_link=1,
+			),
+		)
+		insert_test_doctype(
+			self,
+			new_doctype(
+				NUMBERED_ROW,
+				istable=1,
+				permissions=[],
+				fields=[{"fieldname": "target", "fieldtype": "Link", "label": "Target", "options": NUMBERED}],
+			),
+		)
+		# integer names with no title field: the branch that ships a joined string
+		insert_test_doctype(
+			self,
+			new_doctype(
+				UNTITLED,
+				fields=[{"fieldname": "note", "fieldtype": "Data", "label": "Note"}],
+				autoname="autoincrement",
+			),
+		)
+		insert_test_doctype(
+			self,
+			new_doctype(
+				UNTITLED_ROW,
+				istable=1,
+				permissions=[],
+				fields=[{"fieldname": "target", "fieldtype": "Link", "label": "Target", "options": UNTITLED}],
+			),
+		)
+		insert_test_doctype(
+			self,
+			new_doctype(
+				PARENT,
+				fields=[
+					{"fieldname": "title", "fieldtype": "Data", "label": "Title"},
+					{
+						"fieldname": "targets",
+						"fieldtype": "Table MultiSelect",
+						"label": "Targets",
+						"options": ROW,
+					},
+					{
+						"fieldname": "numbers",
+						"fieldtype": "Table MultiSelect",
+						"label": "Numbers",
+						"options": NUMBERED_ROW,
+					},
+					{
+						"fieldname": "untitled",
+						"fieldtype": "Table MultiSelect",
+						"label": "Untitled",
+						"options": UNTITLED_ROW,
+					},
+				],
+			),
+		)
 
 		for title in ("Alpha", "Beta", "Gamma"):
 			frappe.get_doc(doctype=TARGET, title=title).insert(ignore_if_duplicate=True)

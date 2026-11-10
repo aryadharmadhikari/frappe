@@ -1293,69 +1293,72 @@ class TestAttachment(IntegrationTestCase):
 	test_submittable_doctype = "Test For Attachment Submittable"
 	test_protected_doctype = "Test For Attachment Protected"
 
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		frappe.get_doc(
-			doctype="DocType",
-			name=cls.test_child_doctype,
-			module="Custom",
-			custom=1,
-			istable=1,
-			fields=[
-				{"label": "Row Attachment", "fieldname": "row_attachment", "fieldtype": "Attach"},
-			],
-		).insert(ignore_if_duplicate=True)
-		frappe.get_doc(
-			doctype="DocType",
-			name=cls.test_submittable_doctype,
-			module="Custom",
-			custom=1,
-			is_submittable=1,
-			fields=[
-				{"label": "Title", "fieldname": "title", "fieldtype": "Data"},
-				{"label": "Attachment", "fieldname": "attachment", "fieldtype": "Attach"},
-			],
-			permissions=[
-				{"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1}
-			],
-		).insert(ignore_if_duplicate=True)
-		frappe.get_doc(
-			doctype="DocType",
-			name=cls.test_protected_doctype,
-			module="Custom",
-			custom=1,
-			is_submittable=1,
-			protect_attached_files=1,
-			fields=[{"label": "Title", "fieldname": "title", "fieldtype": "Data"}],
-			permissions=[{"role": "System Manager", "submit": 1, "cancel": 1, "delete": 0}],
-		).insert(ignore_if_duplicate=True)
-		frappe.get_doc(
-			doctype="DocType",
-			name=cls.test_doctype,
-			module="Custom",
-			custom=1,
-			fields=[
-				{"label": "Title", "fieldname": "title", "fieldtype": "Data"},
-				{"label": "Attachment", "fieldname": "attachment", "fieldtype": "Attach"},
-				{
-					"label": "Items",
-					"fieldname": "items",
-					"fieldtype": "Table",
-					"options": cls.test_child_doctype,
-				},
-			],
-		).insert(ignore_if_duplicate=True)
-		frappe.db.commit()
+	def setUp(self):
+		super().setUp()
+		from frappe.core.doctype.doctype.test_doctype import insert_test_doctype
 
-	@classmethod
-	def tearDownClass(cls):
-		frappe.db.rollback()
-		frappe.delete_doc("DocType", cls.test_doctype)
-		frappe.delete_doc("DocType", cls.test_child_doctype)
-		frappe.delete_doc("DocType", cls.test_submittable_doctype)
-		frappe.delete_doc("DocType", cls.test_protected_doctype)
-		frappe.db.commit()
+		insert_test_doctype(
+			self,
+			frappe.get_doc(
+				doctype="DocType",
+				name=self.test_child_doctype,
+				module="Custom",
+				custom=1,
+				istable=1,
+				fields=[
+					{"label": "Row Attachment", "fieldname": "row_attachment", "fieldtype": "Attach"},
+				],
+			),
+		)
+		insert_test_doctype(
+			self,
+			frappe.get_doc(
+				doctype="DocType",
+				name=self.test_submittable_doctype,
+				module="Custom",
+				custom=1,
+				is_submittable=1,
+				fields=[
+					{"label": "Title", "fieldname": "title", "fieldtype": "Data"},
+					{"label": "Attachment", "fieldname": "attachment", "fieldtype": "Attach"},
+				],
+				permissions=[
+					{"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 1}
+				],
+			),
+		)
+		insert_test_doctype(
+			self,
+			frappe.get_doc(
+				doctype="DocType",
+				name=self.test_protected_doctype,
+				module="Custom",
+				custom=1,
+				is_submittable=1,
+				protect_attached_files=1,
+				fields=[{"label": "Title", "fieldname": "title", "fieldtype": "Data"}],
+				permissions=[{"role": "System Manager", "submit": 1, "cancel": 1, "delete": 0}],
+			),
+		)
+		insert_test_doctype(
+			self,
+			frappe.get_doc(
+				doctype="DocType",
+				name=self.test_doctype,
+				module="Custom",
+				custom=1,
+				fields=[
+					{"label": "Title", "fieldname": "title", "fieldtype": "Data"},
+					{"label": "Attachment", "fieldname": "attachment", "fieldtype": "Attach"},
+					{
+						"label": "Items",
+						"fieldname": "items",
+						"fieldtype": "Table",
+						"options": self.test_child_doctype,
+					},
+				],
+			),
+		)
 
 	def test_file_attachment_on_update(self):
 		doc = frappe.get_doc(doctype=self.test_doctype, title="test for attachment on update").insert()
@@ -1701,83 +1704,83 @@ class TestChildTableAttachments(IntegrationTestCase):
 	private to only its uploader.
 	"""
 
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		from frappe.core.doctype.doctype.test_doctype import new_doctype
+	def setUp(self):
+		super().setUp()
+		from frappe.core.doctype.doctype.test_doctype import insert_test_doctype, new_doctype
 
-		cls.child_doctype = "Test Attachment Child"
-		new_doctype(
-			cls.child_doctype,
-			istable=1,
-			fields=[
-				{"label": "Image", "fieldname": "image", "fieldtype": "Attach Image"},
-			],
-		).insert(ignore_if_duplicate=True)
+		self.child_doctype = "Test Attachment Child"
+		insert_test_doctype(
+			self,
+			new_doctype(
+				self.child_doctype,
+				istable=1,
+				fields=[
+					{"label": "Image", "fieldname": "image", "fieldtype": "Attach Image"},
+				],
+			),
+		)
 
-		cls.second_child_doctype = "Test Attachment Child 2"
-		new_doctype(
-			cls.second_child_doctype,
-			istable=1,
-			fields=[
-				{"label": "Image", "fieldname": "image", "fieldtype": "Attach Image"},
-			],
-		).insert(ignore_if_duplicate=True)
+		self.second_child_doctype = "Test Attachment Child 2"
+		insert_test_doctype(
+			self,
+			new_doctype(
+				self.second_child_doctype,
+				istable=1,
+				fields=[
+					{"label": "Image", "fieldname": "image", "fieldtype": "Attach Image"},
+				],
+			),
+		)
 
-		cls.parent_doctype = "Test Attachment Parent"
-		new_doctype(
-			cls.parent_doctype,
-			fields=[
-				{"label": "Title", "fieldname": "title", "fieldtype": "Data"},
-				{"label": "Image", "fieldname": "parent_image", "fieldtype": "Attach Image"},
-				{
-					"label": "Cards",
-					"fieldname": "cards",
-					"fieldtype": "Table",
-					"options": cls.child_doctype,
-				},
-				{
-					"label": "Photos",
-					"fieldname": "photos",
-					"fieldtype": "Table",
-					"options": cls.second_child_doctype,
-				},
-			],
-			permissions=[
-				{"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
-				{"role": "All", "read": 1},
-			],
-		).insert(ignore_if_duplicate=True)
+		self.parent_doctype = "Test Attachment Parent"
+		insert_test_doctype(
+			self,
+			new_doctype(
+				self.parent_doctype,
+				fields=[
+					{"label": "Title", "fieldname": "title", "fieldtype": "Data"},
+					{"label": "Image", "fieldname": "parent_image", "fieldtype": "Attach Image"},
+					{
+						"label": "Cards",
+						"fieldname": "cards",
+						"fieldtype": "Table",
+						"options": self.child_doctype,
+					},
+					{
+						"label": "Photos",
+						"fieldname": "photos",
+						"fieldtype": "Table",
+						"options": self.second_child_doctype,
+					},
+				],
+				permissions=[
+					{"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+					{"role": "All", "read": 1},
+				],
+			),
+		)
 
-		cls.collision_parent_doctype = "Test Attachment Parent Collision"
-		new_doctype(
-			cls.collision_parent_doctype,
-			fields=[
-				{"label": "Title", "fieldname": "title", "fieldtype": "Data"},
-				{"label": "Image", "fieldname": "image", "fieldtype": "Attach Image"},
-				{
-					"label": "Cards",
-					"fieldname": "cards",
-					"fieldtype": "Table",
-					"options": cls.child_doctype,
-				},
-			],
-			permissions=[
-				{"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
-				{"role": "All", "read": 1},
-			],
-		).insert(ignore_if_duplicate=True)
-		frappe.db.commit()
-
-	@classmethod
-	def tearDownClass(cls):
-		frappe.db.rollback()
-		frappe.delete_doc_if_exists("DocType", cls.parent_doctype)
-		frappe.delete_doc_if_exists("DocType", cls.collision_parent_doctype)
-		frappe.delete_doc_if_exists("DocType", cls.child_doctype)
-		frappe.delete_doc_if_exists("DocType", cls.second_child_doctype)
-		frappe.db.commit()
-		super().tearDownClass()
+		self.collision_parent_doctype = "Test Attachment Parent Collision"
+		insert_test_doctype(
+			self,
+			new_doctype(
+				self.collision_parent_doctype,
+				fields=[
+					{"label": "Title", "fieldname": "title", "fieldtype": "Data"},
+					{"label": "Image", "fieldname": "image", "fieldtype": "Attach Image"},
+					{
+						"label": "Cards",
+						"fieldname": "cards",
+						"fieldtype": "Table",
+						"options": self.child_doctype,
+					},
+				],
+				permissions=[
+					{"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+					{"role": "All", "read": 1},
+				],
+			),
+		)
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
@@ -2615,22 +2618,25 @@ class TestFileOptimization(IntegrationTestCase):
 
 
 class TestGuestFileAndAttachments(IntegrationTestCase):
+	test_doctype = "Test Guest Attachment"
+
 	def setUp(self) -> None:
-		frappe.get_doc(
-			doctype="DocType",
-			name="Test For Attachment",
-			module="Custom",
-			custom=1,
-			fields=[
-				{"label": "Title", "fieldname": "title", "fieldtype": "Data"},
-				{"label": "Attachment", "fieldname": "attachment", "fieldtype": "Attach"},
-			],
-		).insert(ignore_if_duplicate=True)
+		super().setUp()
+		from frappe.core.doctype.doctype.test_doctype import insert_test_doctype, new_doctype
+
+		insert_test_doctype(
+			self,
+			new_doctype(
+				self.test_doctype,
+				fields=[
+					{"label": "Title", "fieldname": "title", "fieldtype": "Data"},
+					{"label": "Attachment", "fieldname": "attachment", "fieldtype": "Attach"},
+				],
+			),
+		)
 
 	def tearDown(self) -> None:
 		frappe.set_user("Administrator")
-		frappe.db.rollback()
-		frappe.delete_doc("DocType", "Test For Attachment")
 		super().tearDown()
 
 	def test_attach_unattached_guest_file(self):
@@ -2642,7 +2648,7 @@ class TestGuestFileAndAttachments(IntegrationTestCase):
 			is_private=1,
 		).insert(ignore_permissions=True)
 
-		d = frappe.new_doc("Test For Attachment")
+		d = frappe.new_doc(self.test_doctype)
 		d.title = "Test for attachment on update"
 		d.attachment = f.file_url
 		d.assigned_by = frappe.session.user
@@ -2654,7 +2660,7 @@ class TestGuestFileAndAttachments(IntegrationTestCase):
 				{
 					"file_name": "test_private_guest_attachment.txt",
 					"file_url": f.file_url,
-					"attached_to_doctype": "Test For Attachment",
+					"attached_to_doctype": self.test_doctype,
 					"attached_to_name": d.name,
 					"attached_to_field": "attachment",
 				},
@@ -2904,27 +2910,20 @@ class TestPublicFileRestriction(IntegrationTestCase):
 
 
 class TestForcePrivateAttachments(IntegrationTestCase):
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		from frappe.core.doctype.doctype.test_doctype import new_doctype
-
-		cls.test_doctype = "Test Force Private Attachments"
-		new_doctype(
-			cls.test_doctype,
-			force_private_attachments=1,
-			permissions=[{"role": "Website Manager", "read": 1, "write": 1, "create": 1}],
-		).insert(ignore_if_duplicate=True)
-		frappe.db.commit()
-
-	@classmethod
-	def tearDownClass(cls):
-		frappe.db.rollback()
-		frappe.delete_doc_if_exists("DocType", cls.test_doctype)
-		frappe.db.commit()
-
 	def setUp(self):
 		super().setUp()
+		from frappe.core.doctype.doctype.test_doctype import insert_test_doctype, new_doctype
+
+		self.test_doctype = "Test Force Private Attachments"
+		insert_test_doctype(
+			self,
+			new_doctype(
+				self.test_doctype,
+				force_private_attachments=1,
+				permissions=[{"role": "Website Manager", "read": 1, "write": 1, "create": 1}],
+			),
+		)
+
 		self.user = "test_force_private@example.com"
 		if not frappe.db.exists("User", self.user):
 			frappe.get_doc(
