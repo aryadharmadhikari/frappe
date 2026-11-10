@@ -7,6 +7,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestInbox(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_create_email_flag_queue_accepts_native_list(self):
 		comm = frappe.get_doc(
 			doctype="Communication",
