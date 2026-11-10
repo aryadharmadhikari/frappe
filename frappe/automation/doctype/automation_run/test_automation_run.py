@@ -21,6 +21,8 @@ def make_run(status, days_old=0):
 
 
 class IntegrationTestAutomationRun(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_clear_old_logs_keeps_recent_and_waiting_runs(self):
 		old = make_run("Success", days_old=40)
 		waiting = make_run("Waiting", days_old=40)
