@@ -29,6 +29,8 @@ def delete_blob(name: str):
 
 
 class TestPutBlob(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def put(self, content: bytes, is_private: bool = False, filename: str | None = None):
 		blob = put_blob(io.BytesIO(content), is_private=is_private, filename=filename)
 		self.addCleanup(delete_blob, blob.name)
@@ -158,6 +160,8 @@ class TestPutBlob(IntegrationTestCase):
 class TestBlobLifecycle(IntegrationTestCase):
 	"""revive_blob before relinking a reused blob; byte cleanup after a rollback."""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_revive_locks_an_existing_row_and_misses_a_deleted_one(self):
 		with fake():
 			blob = put_blob(io.BytesIO(unique_bytes(b"revive-")))
@@ -208,6 +212,8 @@ class TestBlobLifecycle(IntegrationTestCase):
 
 class TestDriverRegistry(IntegrationTestCase):
 	"""get_driver_classes and get_driver: the storage_drivers hook, unknown names."""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	def setUp(self):
 		super().setUp()
