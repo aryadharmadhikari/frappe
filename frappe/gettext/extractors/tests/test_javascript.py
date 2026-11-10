@@ -3,6 +3,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestJavaScript(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_extract_javascript(self):
 		code = "let test = `<p>${__('Test')}</p>`;"
 		self.assertEqual(
