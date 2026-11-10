@@ -31,6 +31,8 @@ def _default_action(document_type):
 
 
 class TestAutomationFlow(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	@classmethod
 	def tearDownClass(cls):
 		frappe.db.rollback()
