@@ -74,6 +74,8 @@ class TestNothingBuildsASidebar(IntegrationTestCase):
 
 	"""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_no_patch_builds_a_sidebar(self):
 		post = post_model_sync_patches()
 		for retired in (
@@ -312,6 +314,8 @@ def desktop_icons(rows: int):
 
 class TestDesktopOnUpgrade(IntegrationTestCase):
 	"""Which desktop an upgrading site lands on, and what decides it."""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	def setUp(self):
 		frappe.set_user("Administrator")
