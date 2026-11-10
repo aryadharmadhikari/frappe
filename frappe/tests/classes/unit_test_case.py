@@ -44,7 +44,7 @@ class UnitTestCase(unittest.TestCase, BaseTestCase):
 
 	@classmethod
 	def setUpClass(cls) -> None:
-		if getattr(cls, "_unit_test_case_class_setup_done", None):
+		if cls.__dict__.get("_unit_test_case_class_setup_done"):
 			return
 		super().setUpClass()
 		cls.doctype = _get_doctype_from_module(cls)
@@ -54,6 +54,7 @@ class UnitTestCase(unittest.TestCase, BaseTestCase):
 		# Test Environment (cleanup)
 		cls.addClassCleanup(frappe.set_user, "Administrator")
 		cls._unit_test_case_class_setup_done = True
+		cls.addClassCleanup(delattr, cls, "_unit_test_case_class_setup_done")
 
 	def assertQueryEqual(self, first: str, second: str) -> None:
 		self.assertEqual(self.normalize_sql(first), self.normalize_sql(second))

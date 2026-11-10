@@ -10,6 +10,7 @@ from frappe.database.utils import get_query_type
 from frappe.utils import cint
 
 from ..utils.generators import get_missing_records_module_overrides, make_test_records
+from .transaction import TransactionScope
 from .unit_test_case import UnitTestCase
 
 logger = logging.Logger(__file__)
@@ -36,13 +37,15 @@ class IntegrationTestCase(UnitTestCase):
 
 	TEST_SITE = "test_site"
 
+	ISOLATION_MODE = None
+	ISOLATION_REASON = ""
 	ROLLBACK_AFTER_EACH_TEST = False
 	SHOW_TRANSACTION_COMMIT_WARNINGS = False
 	maxDiff = 10_000  # prints long diffs but useful in CI
 
 	@classmethod
 	def setUpClass(cls) -> None:
-		if getattr(cls, "_integration_test_case_class_setup_done", None):
+		if cls.__dict__.get("_integration_test_case_class_setup_done"):
 			return
 		super().setUpClass()
 
@@ -53,6 +56,8 @@ class IntegrationTestCase(UnitTestCase):
 
 		cls._primary_connection = frappe.local.db
 		cls._secondary_connection = None
+		cls.addClassCleanup(_restore_ctx_locals, copy.deepcopy(frappe.local.flags))
+		cls.addClassCleanup(_rollback_db)
 
 		# Create test record dependencies
 		cls._newly_created_test_records = []
@@ -72,10 +77,10 @@ class IntegrationTestCase(UnitTestCase):
 		if cls.SHOW_TRANSACTION_COMMIT_WARNINGS:
 			frappe.db.before_commit.add(_commit_watcher)
 
-		# enqueue teardown actions (executed in LIFO order)
-		cls.addClassCleanup(_restore_ctx_locals, copy.deepcopy(frappe.local.flags))
-		cls.addClassCleanup(_rollback_db)
+		if cls._isolation_mode() == "savepoint":
+			cls.addClassCleanup(TransactionScope(frappe.local.db).close)
 		cls._integration_test_case_class_setup_done = True
+		cls.addClassCleanup(delattr, cls, "_integration_test_case_class_setup_done")
 
 	@classmethod
 	def tearDownClass(cls) -> None:
@@ -83,12 +88,20 @@ class IntegrationTestCase(UnitTestCase):
 		super().tearDownClass()
 
 	def _callSetUp(self):
-		if self.ROLLBACK_AFTER_EACH_TEST:
-			self.addCleanup(frappe.local.request_cache.clear)
-			self.addCleanup(frappe.set_user, frappe.session.user)
-			self.addCleanup(setattr, frappe.local, "flags", copy.deepcopy(frappe.local.flags))
-			self.addCleanup(_rollback_test, frappe.local.db)
+		if mode := self._isolation_mode():
+			self.addCleanup(_restore_test_locals, _capture_test_locals())
+			self.addCleanup(TransactionScope(frappe.local.db, savepoint=mode == "savepoint").close)
 		super()._callSetUp()
+
+	@classmethod
+	def _isolation_mode(cls):
+		if cls.ISOLATION_MODE is None:
+			return "rollback" if cls.ROLLBACK_AFTER_EACH_TEST else None
+		if cls.ISOLATION_MODE not in {"rollback", "savepoint"}:
+			raise ValueError(f"Invalid test isolation mode: {cls.ISOLATION_MODE}")
+		if cls.ISOLATION_MODE == "savepoint" and not cls.ISOLATION_REASON:
+			raise ValueError("Savepoint isolation requires an ISOLATION_REASON")
+		return cls.ISOLATION_MODE
 
 	def setUp(self) -> None:
 		faulthandler.dump_traceback_later(STUCK_TEST_THRESHOLD, file=sys.__stderr__)
@@ -210,29 +223,22 @@ def _rollback_db():
 	frappe.db.rollback()
 
 
-def _rollback_test(db):
-	before_rollback = db.before_rollback.cut(0)
-	errors = []
-	_run_rollback_callbacks(before_rollback, errors)
-	after_rollback = db.after_rollback.cut(0)
-	db.rollback()
-	if after_rollback:
-		try:
-			_run_rollback_callbacks(after_rollback, errors)
-		finally:
-			db.before_rollback.reset()
-			db.after_rollback.reset()
-			db.rollback()
-	if errors:
-		raise ExceptionGroup("Test rollback callbacks failed", errors)
+def _capture_test_locals():
+	return {
+		name: copy.deepcopy(getattr(frappe.local, name))
+		for name in ("flags", "conf", "session", "lang", "_realtime_log", "_webhook_queue")
+		if hasattr(frappe.local, name)
+	}
 
 
-def _run_rollback_callbacks(callbacks, errors):
-	for callback in callbacks:
-		try:
-			callback()
-		except Exception as error:
-			errors.append(error)
+def _restore_test_locals(state):
+	frappe.set_user(state["session"].user)
+	for name, value in state.items():
+		setattr(frappe.local, name, value)
+	for name in ("system_settings", "website_settings", "_realtime_log", "_webhook_queue"):
+		if name not in state and hasattr(frappe.local, name):
+			delattr(frappe.local, name)
+	frappe.local.request_cache.clear()
 
 
 def _restore_ctx_locals(flags):

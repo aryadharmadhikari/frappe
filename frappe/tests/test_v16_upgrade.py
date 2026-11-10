@@ -24,7 +24,6 @@ import frappe
 from frappe.desk.doctype.sidebar.sidebar import clear_computed_base_cache, item_key, resolve_sidebar
 from frappe.desk.doctype.sidebar.test_sidebar import make_sidebar, no_developer_mode
 from frappe.desk.doctype.workspace.workspace import PRIVATE_MODULE
-from frappe.desk.form.linked_with import capture_pending_side_effects, discard_side_effects_since
 from frappe.patches.v16_0.sidebar_archive import layer_rows, write_user_layer
 from frappe.tests import IntegrationTestCase
 
@@ -88,17 +87,12 @@ def run_conversion() -> list[str]:
 
 
 class _V16UpgradeTestCase(IntegrationTestCase):
+	ISOLATION_MODE = "savepoint"
+	ISOLATION_REASON = "Reusing upgrade fixtures took 7 s on SQLite versus 64 s with per-test setup."
+
 	def setUp(self):
 		super().setUp()
-		side_effects = capture_pending_side_effects()
-		frappe.db.savepoint("before_upgrade_test")
 		self.addCleanup(frappe.clear_cache)
-		self.addCleanup(self.rollback_upgrade_test, side_effects)
-
-	def rollback_upgrade_test(self, side_effects):
-		frappe.db.rollback(save_point="before_upgrade_test")
-		frappe.db.release_savepoint("before_upgrade_test")
-		discard_side_effects_since(side_effects)
 
 
 class TestV16Upgrade(_V16UpgradeTestCase):
@@ -505,7 +499,7 @@ class TestV16Upgrade(_V16UpgradeTestCase):
 		self.assertEqual(base.module, self.QUIET_MODULE)
 
 
-class TestTheArchiveIsInert(_V16UpgradeTestCase):
+class TestTheArchiveIsInert(IntegrationTestCase):
 	"""Nothing reads it at runtime and nothing writes a row to it."""
 
 	ROLLBACK_AFTER_EACH_TEST = True
@@ -541,7 +535,7 @@ class TestTheArchiveIsInert(_V16UpgradeTestCase):
 		self.assertNotIn("Workspace Sidebar", ORPHANABLE_ENTITIES + APP_LEVEL_ENTITIES)
 
 
-class TestTheIntermediateColumnIsGone(_V16UpgradeTestCase):
+class TestTheIntermediateColumnIsGone(IntegrationTestCase):
 	"""It never shipped in any release, so it goes outright, with no patch and no notice."""
 
 	ROLLBACK_AFTER_EACH_TEST = True
