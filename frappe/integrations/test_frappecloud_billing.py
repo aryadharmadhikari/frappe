@@ -8,6 +8,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestFrappeCloudBilling(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	@patch.dict(frappe.conf, {"fc_communication_secret": "secret"})
 	@patch("requests.post", side_effect=requests.exceptions.SSLError)
 	def test_current_site_info_ignores_network_errors(self, _):
