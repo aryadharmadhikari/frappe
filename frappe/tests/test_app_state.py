@@ -69,6 +69,8 @@ class TestDisabledAppPermissionConditions(IntegrationTestCase):
 class TestDisabledAppState(IntegrationTestCase):
 	"""`frappe` stands in for a disabled app here, because it owns modules on every site."""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		super().setUp()
 		self.clear_request_cache()
