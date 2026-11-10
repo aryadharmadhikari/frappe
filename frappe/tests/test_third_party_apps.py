@@ -7,6 +7,8 @@ from frappe.www.third_party_apps import get_context
 
 
 class TestThirdPartyApps(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_app_is_limited_to_clients_with_a_token(self):
 		own, other = (self.make_client(f"_Test Own Client {i}") for i in range(2))
 
