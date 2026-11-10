@@ -8,6 +8,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestEmailTemplate(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_get_email_template_returns_use_html(self):
 		html_template = frappe.get_doc(
 			doctype="Email Template",
