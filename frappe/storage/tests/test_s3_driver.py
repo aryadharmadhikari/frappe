@@ -81,6 +81,8 @@ def make_driver(**config):
 
 
 class TestS3DriverConfig(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_s3_is_a_builtin_driver_configured_from_site_config(self):
 		self.assertEqual(get_driver_classes()["s3"], "frappe.storage.s3_driver.S3Driver")
 
@@ -112,6 +114,8 @@ class TestS3DriverConfig(IntegrationTestCase):
 
 class TestS3SitePrefix(IntegrationTestCase):
 	"""Sites sharing one bucket keep their objects under their own prefix."""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	def setUp(self):
 		super().setUp()
@@ -199,6 +203,8 @@ class TestS3SitePrefix(IntegrationTestCase):
 
 class TestS3DriverBehavior(IntegrationTestCase):
 	"""Behavior tests against a stubbed boto3 client. Run without boto3."""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	def setUp(self):
 		super().setUp()
@@ -340,6 +346,8 @@ class TestS3DriverBehavior(IntegrationTestCase):
 @unittest.skipUnless(HAS_BOTO3, "boto3 not installed")
 class TestS3DriverWithRealBoto3(IntegrationTestCase):
 	"""Presigning is offline in boto3; this needs the real lib, not a bucket."""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	def setUp(self):
 		super().setUp()
