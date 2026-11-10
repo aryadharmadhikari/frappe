@@ -59,6 +59,9 @@ def _initialize_test_environment(site, config):
 
 def _cleanup_after_tests():
 	"""Perform cleanup operations after running tests"""
+	if getattr(frappe.local, "test_isolation_failed", False):
+		frappe.destroy()
+		return
 	global scheduler_disabled_by_user
 	if not scheduler_disabled_by_user:
 		frappe.utils.scheduler.enable_scheduler()

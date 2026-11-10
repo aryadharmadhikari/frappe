@@ -27,12 +27,14 @@ from collections import defaultdict
 from collections.abc import Iterator
 from io import StringIO
 
+import frappe
 from frappe.tests.classes.context_managers import debug_on
 
 from .config import TestConfig
 from .discovery import TestRunnerError
 from .environment import IntegrationTestPreparation
 from .result import TestResult
+from .suite import TestSuite
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +72,7 @@ class TestRunner(unittest.TextTestRunner):
 			tb_locals=tb_locals,
 		)
 		self.cfg = cfg
-		self.per_app_categories = defaultdict(lambda: defaultdict(unittest.TestSuite))
+		self.per_app_categories = defaultdict(lambda: defaultdict(TestSuite))
 		self.integration_preparation = IntegrationTestPreparation(cfg)
 		logger.debug("TestRunner initialized")
 
@@ -90,6 +92,8 @@ class TestRunner(unittest.TextTestRunner):
 				with self._profile():
 					logger.info(f"Starting tests for app: {app}, category: {category}")
 					yield app, category, suite
+					if getattr(frappe.local, "test_isolation_failed", False):
+						return
 
 	def _has_tests(self, suite):
 		return next(self._iterate_suite(suite), None) is not None

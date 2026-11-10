@@ -11,6 +11,7 @@ from frappe.utils import cint
 
 from ..utils.generators import get_missing_records_module_overrides, make_test_records
 from .transaction import TransactionScope
+from .transaction_guard import TransactionBoundaryError, TransactionGuard
 from .unit_test_case import UnitTestCase
 
 logger = logging.Logger(__file__)
@@ -77,8 +78,14 @@ class IntegrationTestCase(UnitTestCase):
 		if cls.SHOW_TRANSACTION_COMMIT_WARNINGS:
 			frappe.db.before_commit.add(_commit_watcher)
 
-		if cls._isolation_mode() == "savepoint":
-			cls.addClassCleanup(TransactionScope(frappe.local.db).close)
+		mode = cls._isolation_mode()
+		if cls.ISOLATION_MODE:
+			guard = cls.enterClassContext(TransactionGuard(frappe.local.db))
+			cls.enterClassContext(guard.isolated_log_database())
+			cls._transaction_guard = guard
+			cls.addClassCleanup(delattr, cls, "_transaction_guard")
+			scope = TransactionScope(frappe.local.db, guard=guard, verify=mode == "savepoint")
+			cls.addClassCleanup(_close_isolation, scope)
 		cls._integration_test_case_class_setup_done = True
 		cls.addClassCleanup(delattr, cls, "_integration_test_case_class_setup_done")
 
@@ -87,11 +94,42 @@ class IntegrationTestCase(UnitTestCase):
 		# Add any necessary teardown code here
 		super().tearDownClass()
 
+	@classmethod
+	def doClassCleanups(cls):
+		super().doClassCleanups()
+		if cls.ISOLATION_MODE and any(
+			not isinstance(error, TransactionBoundaryError) for _, error, _ in cls.tearDown_exceptions
+		):
+			frappe.local.test_isolation_failed = True
+
 	def _callSetUp(self):
 		if mode := self._isolation_mode():
 			self.addCleanup(_restore_test_locals, _capture_test_locals())
-			self.addCleanup(TransactionScope(frappe.local.db, savepoint=mode == "savepoint").close)
+			db = frappe.local.db
+			guard = self.__class__.__dict__.get("_transaction_guard")
+			if self.ISOLATION_MODE and guard is None:
+				guard = self.enterContext(TransactionGuard(db))
+			if guard:
+				self.enterContext(guard.isolated_log_database())
+			if guard and mode == "rollback" and db.transaction_writes:
+				raise AssertionError(
+					"Rollback isolation requires committed fixtures. Move test writes to setUp()."
+				)
+			scope = TransactionScope(db, savepoint=mode == "savepoint", guard=guard)
+			self.addCleanup(_close_isolation, scope)
 		super()._callSetUp()
+
+	def _callCleanup(self, function, /, *args, **kwargs):
+		try:
+			super()._callCleanup(function, *args, **kwargs)
+		except TransactionBoundaryError:
+			raise
+		except Exception:
+			if self.ISOLATION_MODE:
+				frappe.local.test_isolation_failed = True
+				if self._outcome and self._outcome.result:
+					self._outcome.result.stop()
+			raise
 
 	@classmethod
 	def _isolation_mode(cls):
@@ -221,6 +259,17 @@ def _commit_watcher():
 def _rollback_db():
 	frappe.db.value_cache.clear()
 	frappe.db.rollback()
+
+
+def _close_isolation(scope):
+	try:
+		scope.close()
+	except Exception:
+		if scope.guard:
+			frappe.local.test_isolation_failed = True
+		raise
+	if scope.guard:
+		scope.guard.report_violation()
 
 
 def _capture_test_locals():

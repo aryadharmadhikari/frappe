@@ -8,6 +8,8 @@ from frappe.modules.utils import get_module_name
 from frappe.testing.config import TestParameters
 from frappe.tests.utils.test_capabilities import apply_test_service_skips, requires_selected_test_service
 
+from .suite import TestSuite
+
 
 class FrappeTestLoader(unittest.TestLoader):
 	def recursive_load_suites_in_pymodule(self, suite):
@@ -54,7 +56,7 @@ class FrappeTestLoader(unittest.TestLoader):
 
 	def discover_tests(self, params: TestParameters) -> unittest.TestSuite:
 		self.params = params
-		self.testsuite = unittest.TestSuite()
+		self.testsuite = TestSuite()
 
 		if self.params.tests:
 			# handle --test; highest priority; will ignore --doctype and --app
