@@ -7,6 +7,8 @@ from frappe.utils.telemetry import capture_doc
 
 
 class TestCaptureDoc(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		for target, value in (("site_age", 1), ("capture", None)):
 			patcher = patch(f"frappe.utils.telemetry.{target}", return_value=value)
