@@ -34,6 +34,8 @@ YWJjZGVmZ2hpamtsbW5vcF9hdHRhY2htZW50
 
 
 class TestEmailAttachments(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_email_attachment_percent_encoded(self):
 		email_account = frappe._dict({"email_id": "receive@example.com"})
 		mail = InboundMail(EMAIL_CONTENT, email_account)
