@@ -55,16 +55,6 @@ class TestAccessLog(IntegrationTestCase):
 			time.sleep(0.1)
 
 	def setUp(self):
-		# generate keys for current user to send requests for the following tests
-		generate_keys(frappe.session.user)
-		# The external web process must be able to read these API credentials.
-		frappe.db.commit()  # nosemgrep
-		generated_secret = frappe.utils.password.get_decrypted_password(
-			"User", frappe.session.user, fieldname="api_secret"
-		)
-		api_key = frappe.db.get_value("User", "Administrator", "api_key")
-		self.header = {"Authorization": f"token {api_key}:{generated_secret}"}
-
 		self.test_html_template = """
 			<!DOCTYPE html>
 			<html>
@@ -288,6 +278,13 @@ class TestAccessLog(IntegrationTestCase):
 
 	@requires_test_service(TestService.WEB_SERVER)
 	def test_private_file_download(self):
+		generate_keys(frappe.session.user)
+		api_secret = frappe.utils.password.get_decrypted_password(
+			"User", frappe.session.user, fieldname="api_secret"
+		)
+		api_key = frappe.db.get_value("User", frappe.session.user, "api_key")
+		headers = {"Authorization": f"token {api_key}:{api_secret}"}
+
 		# create new private file
 		new_private_file = frappe.get_doc(
 			{
@@ -309,7 +306,7 @@ class TestAccessLog(IntegrationTestCase):
 		try:
 			with requests.post(
 				get_site_url(frappe.local.site) + new_private_file.file_url,
-				headers=self.header,
+				headers=headers,
 				timeout=30,
 			) as response:
 				self.assertTrue(response.ok)

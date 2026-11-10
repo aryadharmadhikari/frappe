@@ -83,10 +83,6 @@ class TestConnectedApp(IntegrationTestCase):
 		social_login_key = create_or_update_social_login_key()
 		self.base_url = social_login_key.get("base_url")
 
-		frappe.db.commit()
-		self.connected_app.reload()
-		self.oauth_client.reload()
-
 		redirect_uri = self.connected_app.get("redirect_uri")
 		self.oauth_client.update({"redirect_uris": redirect_uri, "default_redirect_uri": redirect_uri})
 		self.oauth_client.save()

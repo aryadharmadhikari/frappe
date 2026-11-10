@@ -52,7 +52,6 @@ class TestAutoRepeat(IntegrationTestCase):
 		self.assertEqual(doc.next_schedule_date, today())
 		data = get_auto_repeat_entries(getdate(today()))
 		create_repeated_entries(data)
-		frappe.db.commit()
 
 		todo = frappe.get_doc(doc.reference_doctype, doc.reference_document)
 		self.assertEqual(todo.auto_repeat, doc.name)
@@ -78,7 +77,6 @@ class TestAutoRepeat(IntegrationTestCase):
 		self.assertEqual(doc.next_schedule_date, today())
 		data = get_auto_repeat_entries(getdate(today()))
 		create_repeated_entries(data)
-		frappe.db.commit()
 
 		todo = frappe.get_doc(doc.reference_doctype, doc.reference_document)
 		self.assertEqual(todo.auto_repeat, doc.name)
@@ -104,7 +102,6 @@ class TestAutoRepeat(IntegrationTestCase):
 		self.assertEqual(doc.next_schedule_date, today())
 		data = get_auto_repeat_entries(getdate(today()))
 		create_repeated_entries(data)
-		frappe.db.commit()
 
 		todo = frappe.get_doc(doc.reference_doctype, doc.reference_document)
 		self.assertEqual(todo.auto_repeat, doc.name)
@@ -134,7 +131,6 @@ class TestAutoRepeat(IntegrationTestCase):
 		self.assertEqual(doc.next_schedule_date, today())
 		data = get_auto_repeat_entries(getdate(today()))
 		create_repeated_entries(data)
-		frappe.db.commit()
 
 		todo = frappe.get_doc(doc.reference_doctype, doc.reference_document)
 		self.assertEqual(todo.auto_repeat, doc.name)
@@ -252,7 +248,6 @@ class TestAutoRepeat(IntegrationTestCase):
 		)
 		data = get_auto_repeat_entries(getdate(today()))
 		create_repeated_entries(data)
-		frappe.db.commit()
 
 		new_todo = frappe.db.get_value("ToDo", {"auto_repeat": doc.name, "name": ("!=", todo.name)}, "name")
 
@@ -427,7 +422,6 @@ class TestAutoRepeat(IntegrationTestCase):
 		self.assertEqual(doc.next_schedule_date, today())
 		data = get_auto_repeat_entries(getdate(today()))
 		create_repeated_entries(data)
-		frappe.db.commit()
 
 		todo = frappe.get_doc(doc.reference_doctype, doc.reference_document)
 		self.assertEqual(todo.auto_repeat, doc.name)
@@ -462,7 +456,6 @@ class TestAutoRepeat(IntegrationTestCase):
 		self.assertEqual(doc.next_schedule_date, today())
 		data = get_auto_repeat_entries(getdate(today()))
 		create_repeated_entries(data)
-		frappe.db.commit()
 
 		todo = frappe.get_doc(doc.reference_doctype, doc.reference_document)
 		self.assertEqual(todo.auto_repeat, doc.name)
@@ -470,16 +463,6 @@ class TestAutoRepeat(IntegrationTestCase):
 		new_todo_count = frappe.db.count("ToDo", {"auto_repeat": doc.name, "name": ("!=", todo.name)}, "name")
 
 		self.assertEqual(new_todo_count, 2)
-
-	def tearDown(self):
-		# every test here commits, so IntegrationTestCase's per-test rollback can't
-		# undo them. The assignee tests assign generated ToDos to Guest, which shares
-		# those ToDos with Guest; left behind, that lets anonymous API reads succeed
-		# in unrelated tests later in the same shard. Drop the committed artifacts.
-		frappe.db.delete("DocShare", {"share_doctype": "ToDo", "user": "Guest"})
-		# the leaked shares were committed, so the cleanup must be committed too
-		frappe.db.commit()  # nosemgrep
-		super().tearDown()
 
 
 def make_auto_repeat(**args):

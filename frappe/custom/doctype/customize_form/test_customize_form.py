@@ -33,7 +33,6 @@ class TestCustomizeForm(IntegrationTestCase):
 	def setUp(self):
 		self.insert_custom_field()
 		frappe.db.delete("Property Setter", dict(doc_type="Event"))
-		frappe.db.commit()
 		frappe.clear_cache(doctype="Event")
 
 	def tearDown(self):
@@ -309,7 +308,6 @@ class TestCustomizeForm(IntegrationTestCase):
 		frappe.db.delete("Property Setter", dict(doc_type="Event"))
 		frappe.clear_cache(doctype="Event")
 		frappe.db.updatedb("Event")
-		frappe.db.commit()  # nosemgrep
 
 	def test_custom_link(self):
 		try:

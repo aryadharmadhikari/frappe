@@ -210,7 +210,6 @@ class TestGlobalSearch(IntegrationTestCase):
 			doc.insert()
 
 		global_search.sync_global_search()
-		frappe.db.commit()
 
 	def test_get_field_value(self):
 		cases = [
