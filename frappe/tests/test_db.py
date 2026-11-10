@@ -255,8 +255,8 @@ class TestDB(IntegrationTestCase):
 		self.assertEqual(results, {"enable_telemetry": doc.enable_telemetry})
 
 	def test_log_touched_tables(self):
-		if frappe.db.has_column("ToDo", "todo_custom_field"):
-			frappe.db.sql_ddl("ALTER TABLE `tabToDo` DROP COLUMN `todo_custom_field`")
+		from frappe.core.doctype.doctype.test_doctype import _transactional_postgres_schema
+
 		frappe.flags.in_migrate = True
 		frappe.flags.touched_tables = set()
 		frappe.db.set_single_value("System Settings", "backup_limit", 5)
@@ -282,14 +282,13 @@ class TestDB(IntegrationTestCase):
 		todo.delete()
 		self.assertIn("tabToDo", frappe.flags.touched_tables)
 
-		from frappe.core.doctype.doctype.test_doctype import _transactional_postgres_schema
-
 		frappe.db.rollback()
 		frappe.flags.touched_tables = set()
+		fieldname = f"todo_custom_field_{frappe.generate_hash(length=8)}"
 		with _transactional_postgres_schema():
-			cf = create_custom_field("ToDo", {"label": "ToDo Custom Field"})
+			cf = create_custom_field("ToDo", {"label": "ToDo Custom Field", "fieldname": fieldname})
 		if frappe.db.db_type == "mariadb":
-			self.addCleanup(frappe.db.sql_ddl, "ALTER TABLE `tabToDo` DROP COLUMN `todo_custom_field`")
+			self.addCleanup(frappe.db.sql_ddl, f"ALTER TABLE `tabToDo` DROP COLUMN `{cf.fieldname}`")
 			self.addCleanup(cf.delete)
 			self.addCleanup(frappe.db.rollback)
 		self.assertIn("tabToDo", frappe.flags.touched_tables)
