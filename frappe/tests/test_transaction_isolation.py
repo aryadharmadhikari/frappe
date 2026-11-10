@@ -143,6 +143,20 @@ class TestTransactionIsolation(IntegrationTestCase):
 		self.assertEqual(calls, ["test rollback", "class rollback"])
 		self.assertFalse(frappe.db.exists("ToDo", {"description": description}))
 
+	def test_guarded_rollback_contains_bulk_inserts(self):
+		name = frappe.generate_hash(length=10)
+
+		class RollbackCase(IntegrationTestCase):
+			ISOLATION_MODE = "rollback"
+
+			def test_insert(self):
+				frappe.db.bulk_insert("ToDo", ("name", "description"), [(name, "bulk fixture")])
+				self.assertTrue(frappe.db.exists("ToDo", name))
+
+		result = RollbackCase("test_insert").run()
+		self.assertTrue(result.wasSuccessful(), (result.failures, result.errors))
+		self.assertFalse(frappe.db.exists("ToDo", name))
+
 	def test_failed_class_setup_rolls_back_shared_fixtures(self):
 		description = frappe.generate_hash()
 

@@ -9,6 +9,7 @@ from weakref import WeakSet
 import psycopg
 import pymysql
 import sqlparse
+from psycopg.sql import Composable
 from rq import Queue
 
 import frappe
@@ -24,6 +25,7 @@ SAVEPOINT_STATEMENT = re.compile(
 )
 ESCAPING_SQL = re.compile(r"/\*!|/\*M!|\b(?:into\s+(?:outfile|dumpfile)|or\s+rollback)\b", re.I)
 TRACE_COMMENT = re.compile(r"/\* FRAPPE_TRACE_ID: [0-9a-fA-F-]{8,64} \*/\s*$")
+COPY_FROM_STDIN = re.compile(r"\s*copy\s+[^;]+\s+from\s+stdin\s*;?\s*", re.I)
 
 
 class TransactionBoundaryError(AssertionError):
@@ -243,9 +245,15 @@ class GuardedCursor:
 	def __getattr__(self, name):
 		if name == "connection":
 			return self._guard.db._conn
-		if name in {"_executed", "_result", "_rows", "description", "mogrify", "rowcount"} or name.startswith(
-			"fetch"
-		):
+		if name in {
+			"_executed",
+			"_result",
+			"_rows",
+			"adapters",
+			"description",
+			"mogrify",
+			"rowcount",
+		} or name.startswith("fetch"):
 			return getattr(self._cursor, name)
 		self._guard.reject(f"using the driver cursor's {name}")
 
@@ -258,6 +266,12 @@ class GuardedCursor:
 		self._guard.check_sql(query)
 		result = self._cursor.executemany(query, *args, **kwargs)
 		return self if result is self._cursor else result
+
+	def copy(self, query, *args, **kwargs):
+		statement = query.as_string(self._cursor) if isinstance(query, Composable) else query
+		if not isinstance(statement, str) or not COPY_FROM_STDIN.fullmatch(statement):
+			self._guard.reject("COPY outside the test transaction")
+		return self._cursor.copy(query, *args, **kwargs)
 
 	def close(self):
 		self._cursor.close()
