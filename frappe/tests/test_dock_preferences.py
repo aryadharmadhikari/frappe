@@ -353,26 +353,19 @@ class DockTestCase(IntegrationTestCase):
 	no opinion about anybody else's.
 	"""
 
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
+	def setUp(self):
+		super().setUp()
 		frappe.set_user("Administrator")
-		cls._fixtures = ExitStack()
 		for module in TRIO:
-			cls._fixtures.enter_context(sidebarless_module(module))
-		cls._fixtures.enter_context(shipped_dock({APP: [sidebar(module) for module in TRIO]}))
-
-	@classmethod
-	def tearDownClass(cls):
-		cls._fixtures.close()
-		super().tearDownClass()
+			self.enterContext(sidebarless_module(module))
+		self.enterContext(shipped_dock({APP: [sidebar(module) for module in TRIO]}))
 
 
 class TestDockPreferences(DockTestCase):
 	"""The user's own layer, on a site whose own layer names nothing."""
 
 	def setUp(self):
-		frappe.set_user("Administrator")
+		super().setUp()
 		if not frappe.db.exists("User", USER):
 			frappe.get_doc(
 				{
@@ -497,7 +490,7 @@ class TestDockSiteLayer(DockTestCase):
 	DESK_USER = "test-dock-desk-user@example.com"
 
 	def setUp(self):
-		frappe.set_user("Administrator")
+		super().setUp()
 		self.make_user(self.MANAGER, ["Desk User", "Workspace Manager"])
 		self.make_user(self.DESK_USER, ["Desk User"])
 
@@ -721,7 +714,7 @@ class TestTheAppLayer(DockTestCase):
 	USER = "test-dock-app-layer@example.com"
 
 	def setUp(self):
-		frappe.set_user("Administrator")
+		super().setUp()
 		if not frappe.db.exists("User", self.USER):
 			frappe.get_doc(
 				{
@@ -1027,7 +1020,7 @@ class TestWhatACustomisationMayDo(DockTestCase):
 	PERSON = "test-dock-may-person@example.com"
 
 	def setUp(self):
-		frappe.set_user("Administrator")
+		super().setUp()
 		for email, roles in (
 			(self.MANAGER, ["Desk User", "Workspace Manager"]),
 			(self.PERSON, ["Desk User"]),
@@ -1275,7 +1268,7 @@ class TestTheRowShape(DockTestCase):
 	USER = "test-dock-row-shape@example.com"
 
 	def setUp(self):
-		frappe.set_user("Administrator")
+		super().setUp()
 		if not frappe.db.exists("User", self.USER):
 			frappe.get_doc(
 				{
@@ -1476,7 +1469,7 @@ class TestTheCompanionMount(DockTestCase):
 	USER = "test-dock-mount@example.com"
 
 	def setUp(self):
-		frappe.set_user("Administrator")
+		super().setUp()
 		if not frappe.db.exists("User", self.USER):
 			frappe.get_doc(
 				{
@@ -1627,7 +1620,7 @@ class TestAnAppWithNoDock(DockTestCase):
 	USER = "test-dock-none@example.com"
 
 	def setUp(self):
-		frappe.set_user("Administrator")
+		super().setUp()
 		if not frappe.db.exists("User", self.USER):
 			frappe.get_doc(
 				{
