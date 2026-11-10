@@ -56,6 +56,8 @@ def _rows():
 
 
 class TestKnowledgeStore(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		store.drop_table()
 
@@ -300,6 +302,8 @@ class TestKnowledgeSettings(IntegrationTestCase):
 
 
 class TestChunker(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_text_is_split_into_overlapping_chunks_within_size(self):
 		self.assertEqual(chunk_text("   \n  ", chunk_size=100, overlap=10), [])
 		self.assertEqual(chunk_text("hello world", chunk_size=100, overlap=10), ["hello world"])
@@ -996,6 +1000,8 @@ class TestKnowledgeSearchTool(IntegrationTestCase):
 
 
 class TestAttachmentStore(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		attachment_store.drop_table()
 
