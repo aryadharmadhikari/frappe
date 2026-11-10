@@ -24,6 +24,8 @@ def unique_html():
 
 
 class TestFileStorageIntegration(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def make_file(self, content, file_name="storage-v2.png", is_private=0, **kwargs):
 		file = frappe.get_doc(
 			doctype="File", file_name=file_name, content=content, is_private=is_private, **kwargs
