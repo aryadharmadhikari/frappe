@@ -9,6 +9,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestSiteMigration(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_setup_rebuilds_module_map_from_modules_txt(self):
 		frappe.local.app_modules = {
 			app: [module for module in modules if module != "core"]
