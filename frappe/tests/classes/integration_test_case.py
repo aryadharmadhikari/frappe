@@ -183,21 +183,23 @@ class IntegrationTestCase(UnitTestCase):
 	@contextmanager
 	def secondary_connection(self) -> AbstractContextManager[None]:
 		"""Switch to secondary DB connection."""
-		if self._secondary_connection is None:
-			frappe.connect()  # get second connection
-			self._secondary_connection = frappe.local.db
-
+		current_conn = frappe.local.db
 		try:
-			current_conn = frappe.local.db
+			if self._secondary_connection is None:
+				frappe.connect(set_admin_as_user=False)
+				self._secondary_connection = frappe.local.db
+				self.addCleanup(self._secondary_connection.close)
+				self.addCleanup(self._rollback_connections)
 			frappe.local.db = self._secondary_connection
 			yield
 		finally:
 			frappe.local.db = current_conn
-			self.addCleanup(self._rollback_connections)
 
 	def _rollback_connections(self) -> None:
-		self._primary_connection.rollback()
-		self._secondary_connection.rollback()
+		try:
+			self._primary_connection.rollback()
+		finally:
+			self._secondary_connection.rollback()
 
 	@contextmanager
 	def assertQueryCount(self, count: int, query_type: tuple[str] | None = None):

@@ -7,7 +7,6 @@ from unittest.mock import patch
 from rq import Queue
 
 import frappe
-from frappe.database import get_db
 from frappe.testing.discovery import TestRunnerError
 from frappe.testing.environment import check_test_site_isolation, quarantine_test_site
 from frappe.testing.suite import TestSuite
@@ -36,16 +35,11 @@ class TestTransactionIsolation(IntegrationTestCase):
 				frappe.db.after_commit.add(lambda: callbacks.append(todo.name))
 				frappe.db.commit()
 				self.assertEqual(callbacks, [todo.name])
-				other = get_db(
-					socket=frappe.conf.db_socket,
-					host=frappe.conf.db_host,
-					port=frappe.conf.db_port,
-					user=frappe.conf.db_user,
-					password=frappe.conf.db_password,
-					cur_db_name=frappe.conf.db_name,
-				)
-				self.addCleanup(other.close)
-				self.assertEqual(other.get_value("ToDo", todo.name, "description"), description)
+				primary = frappe.local.db
+				with self.secondary_connection():
+					self.assertIsNot(frappe.local.db, primary)
+					self.assertEqual(frappe.db.get_value("ToDo", todo.name, "description"), description)
+				self.assertIs(frappe.local.db, primary)
 
 		result = TestSuite([ResetCase("test_commit")]).run(unittest.TestResult())
 		self.assertTrue(result.wasSuccessful(), (result.failures, result.errors))
