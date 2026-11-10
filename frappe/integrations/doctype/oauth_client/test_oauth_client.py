@@ -9,6 +9,8 @@ from frappe.utils import add_to_date, now_datetime
 
 
 class TestOAuthClient(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def create_dynamic_client(self):
 		return create_new_oauth_client(
 			OAuth2DynamicClientMetadata(
