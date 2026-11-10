@@ -10,6 +10,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestSMTP(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_discard_session_closes_and_clears_active_session(self):
 		server = SMTPServer(server="smtp.example.com")
 		fake_session = Mock()
