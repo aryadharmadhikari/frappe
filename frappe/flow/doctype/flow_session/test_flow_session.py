@@ -680,6 +680,8 @@ class TestFlowSessionModelPermission(IntegrationTestCase):
 class TestFlowServerSessionApprovalModePatch(IntegrationTestCase):
 	"""The patch that moves the server's saved chats off the auto_approve flag."""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_old_chats_load_with_the_approval_mode_their_flag_meant(self):
 		import json
 		import os
