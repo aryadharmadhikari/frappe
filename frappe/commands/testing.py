@@ -154,6 +154,7 @@ def main(
 	)
 
 	_initialize_test_environment(site, test_config)
+	site_path = os.path.abspath(frappe.local.site_path)
 
 	xml_output_file = _setup_xml_output(junit_xml_output)
 
@@ -193,7 +194,7 @@ def main(
 		return results
 
 	finally:
-		_cleanup_after_tests()
+		_cleanup_after_tests(site_path)
 		if xml_output_file:
 			xml_output_file.close()
 
@@ -206,12 +207,15 @@ def run_tests_in_light_mode(test_params):
 	import pstats
 	from io import StringIO
 
+	from frappe.testing.environment import check_test_site_isolation, quarantine_test_site
 	from frappe.testing.loader import FrappeTestLoader
 	from frappe.testing.result import FrappeTestResult
 	from frappe.tests.utils import toggle_test_mode
 
 	# init environment
+	check_test_site_isolation(test_params.site)
 	frappe.init(test_params.site)
+	site_path = os.path.abspath(frappe.local.site_path)
 	if not frappe.db:
 		frappe.connect()
 
@@ -229,7 +233,13 @@ def run_tests_in_light_mode(test_params):
 		pr = cProfile.Profile()
 		pr.enable()
 
-	result = unittest.TextTestRunner(failfast=test_params.failfast, resultclass=FrappeTestResult).run(suite)
+	try:
+		result = unittest.TextTestRunner(failfast=test_params.failfast, resultclass=FrappeTestResult).run(
+			suite
+		)
+	finally:
+		if getattr(frappe.local, "test_isolation_failed", False):
+			quarantine_test_site(site_path)
 
 	if test_params.profile:
 		pr.disable()

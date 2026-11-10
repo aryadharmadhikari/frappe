@@ -25,6 +25,7 @@ import logging
 import pkgutil
 import tomllib
 import unittest
+from pathlib import Path
 
 import frappe
 import frappe.utils.scheduler
@@ -34,12 +35,26 @@ from .runner import TestRunnerError
 from .utils import debug_timer
 
 logger = logging.getLogger(__name__)
+QUARANTINE_FILE = ".test-isolation-failed"
+
+
+def check_test_site_isolation(site_path):
+	if (Path(site_path) / QUARANTINE_FILE).exists():
+		raise TestRunnerError(f"Test site {site_path} failed isolation cleanup. Rebuild it before reuse.")
+
+
+def quarantine_test_site(site_path):
+	try:
+		(Path(site_path) / QUARANTINE_FILE).touch()
+	finally:
+		frappe.destroy()
 
 
 @debug_timer
 def _initialize_test_environment(site, config):
 	"""Initialize the test environment"""
 	logger.debug(f"Initializing test environment for site: {site}")
+	check_test_site_isolation(site)
 	frappe.init(site)
 	if not frappe.db:
 		frappe.connect()
@@ -57,10 +72,10 @@ def _initialize_test_environment(site, config):
 	frappe.flags.tests_verbose = logger.getEffectiveLevel() < logging.INFO
 
 
-def _cleanup_after_tests():
+def _cleanup_after_tests(site_path):
 	"""Perform cleanup operations after running tests"""
 	if getattr(frappe.local, "test_isolation_failed", False):
-		frappe.destroy()
+		quarantine_test_site(site_path)
 		return
 	global scheduler_disabled_by_user
 	if not scheduler_disabled_by_user:

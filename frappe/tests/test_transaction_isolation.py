@@ -1,10 +1,13 @@
 import sqlite3
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 import frappe
 from frappe.database import get_db
+from frappe.testing.discovery import TestRunnerError
+from frappe.testing.environment import check_test_site_isolation, quarantine_test_site
 from frappe.testing.suite import TestSuite
 from frappe.tests import IntegrationTestCase
 from frappe.tests.classes.transaction_guard import TransactionBoundaryError
@@ -186,6 +189,14 @@ class TestTransactionIsolation(IntegrationTestCase):
 		self.assertEqual(result.testsRun, 1)
 		self.assertIn("test failure", result.failures[0][1])
 		self.assertIn("cleanup failure", result.errors[0][1])
+
+	def test_quarantined_site_cannot_be_reused_by_another_run(self):
+		with TemporaryDirectory() as site_path, patch.object(frappe, "destroy") as destroy:
+			check_test_site_isolation(site_path)
+			quarantine_test_site(site_path)
+			destroy.assert_called_once_with()
+			with self.assertRaisesRegex(TestRunnerError, "Rebuild it before reuse"):
+				check_test_site_isolation(site_path)
 
 	def test_log_database_has_a_separate_baseline(self):
 		class RollbackCase(IntegrationTestCase):
