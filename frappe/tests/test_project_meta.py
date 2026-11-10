@@ -8,6 +8,8 @@ from frappe.tests.classes.integration_test_case import IntegrationTestCase
 
 
 class TestProjectMeta(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_init_py_tax_paid(self):
 		"""Impose the __init__.py tax.
 
