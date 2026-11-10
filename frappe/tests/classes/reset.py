@@ -74,7 +74,13 @@ def _drop_site_database(database, installed):
 				frappe.db.close()
 		finally:
 			if frappe.conf.db_type != "sqlite":
-				drop_user_and_database(database, database)
+				# Opening the root connection can read the site's time zone.
+				frappe.local.db = None
+				try:
+					drop_user_and_database(database, database)
+				finally:
+					if root := frappe.flags.root_connection:
+						root.close()
 
 
 def _remove_site_directory(path):
