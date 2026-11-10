@@ -36,6 +36,8 @@ def _cleanup(fn):
 
 
 class TestConcurrentLimit(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_bypassed_outside_request_context(self):
 		"""Decorator is a no-op outside HTTP request context (background jobs, CLI, tests).
 		Even limit=0 must not reject."""
@@ -182,6 +184,8 @@ class TestConcurrentLimit(IntegrationTestCase):
 
 
 class TestWebTierConcurrency(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	@contextlib.contextmanager
 	def _server(self, argv, server_software="gunicorn/23.0.0", cwd=None):
 		"""Run the body as if this process were a gunicorn worker started with *argv* in *cwd*."""
