@@ -28,12 +28,10 @@ class IntegrationTestCase(UnitTestCase):
 	- Context managers for query counting and Redis call monitoring
 	- Lazy loading of test record dependencies
 
-	Note: If you override `setUpClass`, make sure to call `super().setUpClass()`
-	to maintain the functionality of this base class.
+	Call `super().setUpClass()` before acquiring class fixtures.
 
-	Set `ROLLBACK_AFTER_EACH_TEST` for classes whose test methods and
-	per-test fixtures use a rollbackable transaction. Create uncommitted
-	fixtures in `setUp` so every test has them.
+	Declare `ISOLATION_MODE` as `rollback`, `savepoint`, or `reset`.
+	Savepoint and reset modes require an `ISOLATION_REASON`.
 	"""
 
 	TEST_SITE = "test_site"

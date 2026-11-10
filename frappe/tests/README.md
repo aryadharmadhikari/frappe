@@ -55,6 +55,38 @@ This class extends `UnitTestCase` and is designed for integration testing. It pr
 
 For a detailed list of context managers, please refer to the code.
 
+#### Test isolation
+
+Use `UnitTestCase` for tests that do not use a database or persistent service. Use `enterContext`
+or `addCleanup` for patches and process state.
+
+Set `ISOLATION_MODE = "rollback"` for ordinary integration tests. The runner commits its test
+record fixtures, and rolls back each test after `tearDown` and its cleanups. Create additional
+database fixtures in `setUp`. Read changes on the test connection when the assertion only needs
+to verify a write.
+
+Set `ISOLATION_MODE = "savepoint"` with an `ISOLATION_REASON` when measurements justify sharing
+uncommitted class fixtures. The runner rolls back to a protected savepoint after each method and
+rolls back the class transaction after class cleanup. A `subTest` shares its method's transaction.
+
+Both modes reject commits, full rollbacks, schema changes, additional connections and worker
+dispatch. A test may use savepoints it creates in its own scope. The framework log database uses
+a temporary file for each scope. Register cleanup for Redis keys, files, and other external effects.
+Use reset mode when the operation under test cannot run inside a guarded transaction.
+
+Set `ISOLATION_MODE = "reset"` with an `ISOLATION_REASON` when a test needs a real commit, controls
+the full rollback, or changes schema. The runner installs and disposes of a separate site per
+method. MariaDB and PostgreSQL need the database administrator credentials used for test site
+installation. Register cleanup for secondary connections and wait for any workers before the
+site is discarded.
+
+A cleanup failure in a declared mode stops the test run. The CLI marks the site as quarantined
+and rejects further test runs on it. Rebuild the site before clearing the quarantine marker.
+
+Existing classes may still use class-level cleanup or the earlier `ROLLBACK_AFTER_EACH_TEST`
+opt-in. Declare a mode as you migrate a class. Change the suite default only after validation
+on every supported backend and equivalent first-pass CI measurements.
+
 ### Utility Functions and Generators ([`utils/generators.py`](./utils/generators.py))
 
 This module contains utility functions for generating test records and managing test data.
