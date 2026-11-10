@@ -25,7 +25,7 @@ from frappe.permissions import (
 	update_permission_property,
 )
 from frappe.tests import IntegrationTestCase
-from frappe.tests.test_helpers import setup_for_tests
+from frappe.tests.test_helpers import create_test_blog_records, setup_for_tests
 from frappe.tests.utils import make_test_records_for_doctype
 from frappe.utils.data import now_datetime
 from frappe.utils.user import UserPermissions
@@ -36,29 +36,28 @@ EXTRA_TEST_RECORD_DEPENDENCIES = ["User", "Contact", "Salutation"]
 class TestPermissions(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
-		super().setUpClass()
 		setup_for_tests()
-		frappe.clear_cache(doctype="Test Blog Post")
-		user = frappe.get_doc("User", "test1@example.com")
-		user.add_roles("Website Manager")
-		user.add_roles("System Manager")
-
-		user = frappe.get_doc("User", "test2@example.com")
-		user.add_roles("Blogger")
-
-		user = frappe.get_doc("User", "test3@example.com")
-		user.add_roles("Sales User")
-
-		user = frappe.get_doc("User", "testperm@example.com")
-		user.add_roles("Website Manager")
+		super().setUpClass()
 
 	def setUp(self):
+		super().setUp()
+		frappe.set_user("Administrator")
 		frappe.clear_cache(doctype="Test Blog Post")
 
 		reset("Test Blogger")
 		reset("Test Blog Post")
 
 		frappe.db.delete("User Permission")
+		frappe.db.delete("Test Blog Post")
+		create_test_blog_records()
+		for email, roles in (
+			("test1@example.com", ("Website Manager", "System Manager")),
+			("test2@example.com", ("Blogger",)),
+			("test3@example.com", ("Sales User",)),
+			("testperm@example.com", ("Website Manager",)),
+		):
+			frappe.get_doc("User", email).add_roles(*roles)
+			frappe.db.after_rollback.add(lambda email=email: frappe.clear_cache(user=email))
 
 		frappe.set_user("test1@example.com")
 
