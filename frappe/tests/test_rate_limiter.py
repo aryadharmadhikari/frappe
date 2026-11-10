@@ -15,6 +15,8 @@ from frappe.utils import cint, set_request
 
 
 class TestRateLimiter(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_apply_with_limit(self):
 		frappe.conf.rate_limit = {"window": 86400, "limit": 1}
 		frappe.rate_limiter.apply()
@@ -147,6 +149,8 @@ def _limited_user_based_with_key():
 
 
 class TestRateLimitDecorator(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		request, request_ip, user = (
 			getattr(frappe.local, "request", None),
