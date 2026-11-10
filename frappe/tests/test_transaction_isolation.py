@@ -48,6 +48,30 @@ class TestTransactionIsolation(IntegrationTestCase):
 		self.assertFalse(paths[0].exists())
 		self.assertFalse(frappe.db.exists("ToDo", {"description": description}))
 
+	def test_failed_site_install_discards_the_partial_site(self):
+		baseline = frappe.local.db
+		paths = []
+
+		def fail_install(database, site, **kwargs):
+			path = Path(site)
+			path.mkdir()
+			paths.append(path)
+			raise RuntimeError("installation failed")
+
+		class ResetCase(IntegrationTestCase):
+			ISOLATION_MODE = "reset"
+			ISOLATION_REASON = "Exercise a partial site installation."
+
+			def test_never_runs(self):
+				self.fail("A failed installation should prevent this test from running")
+
+		with patch("frappe.tests.classes.reset._new_site", fail_install):
+			result = TestSuite([ResetCase("test_never_runs")]).run(unittest.TestResult())
+		self.assertEqual(len(result.errors), 1)
+		self.assertIn("installation failed", result.errors[0][1])
+		self.assertIs(frappe.local.db, baseline)
+		self.assertFalse(paths[0].exists())
+
 	def test_rejects_transaction_breakers_even_if_caught_by_the_test(self):
 		operations = (
 			lambda: frappe.db.commit(),

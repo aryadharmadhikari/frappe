@@ -11,6 +11,8 @@ from frappe.utils.logging import close_log_db
 
 def create_reset_site(cleanups):
 	"""Install a fresh site and register its disposal before the installation starts."""
+	if Path(frappe.local.sites_path).resolve() != Path.cwd():
+		raise RuntimeError("Run reset tests from the bench's sites directory with bench run-tests.")
 	baseline = dict(frappe.local)
 	config = frappe.conf.copy()
 	apps = [app for app in frappe.get_installed_apps() if app != "frappe"]
@@ -24,14 +26,14 @@ def create_reset_site(cleanups):
 	cleanups.callback(_remove_site_directory, path)
 	cleanups.callback(frappe.destroy)
 	frappe.init(site, force=True, new_site=True)
-	frappe.flags.root_login = config.get(f"{config.db_type}_root_login") or config.root_login
-	frappe.flags.root_password = config.get(f"{config.db_type}_root_password") or config.root_password
 	admin_password = frappe.generate_hash(length=24)
 	installed = False
 	try:
 		_new_site(
 			database,
 			site,
+			db_root_username=config.get(f"{config.db_type}_root_login") or config.root_login,
+			db_root_password=config.get(f"{config.db_type}_root_password") or config.root_password,
 			db_type=config.db_type,
 			db_host=config.db_host,
 			db_port=config.db_port,
