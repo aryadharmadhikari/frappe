@@ -9,6 +9,8 @@ from frappe.utils import add_to_date, now_datetime
 
 
 class TestReminder(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_reminder(self):
 		description = "TEST_REMINDER"
 
