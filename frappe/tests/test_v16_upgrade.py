@@ -508,6 +508,8 @@ class TestV16Upgrade(_V16UpgradeTestCase):
 class TestTheArchiveIsInert(_V16UpgradeTestCase):
 	"""Nothing reads it at runtime and nothing writes a row to it."""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_nobody_can_create_a_row(self):
 		with self.assertRaises(frappe.ValidationError):
 			frappe.get_doc(
@@ -541,6 +543,8 @@ class TestTheArchiveIsInert(_V16UpgradeTestCase):
 
 class TestTheIntermediateColumnIsGone(_V16UpgradeTestCase):
 	"""It never shipped in any release, so it goes outright, with no patch and no notice."""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	def test_the_workspace_has_no_sidebar_items(self):
 		self.assertFalse(frappe.get_meta("Workspace").get_field("sidebar_items"))
