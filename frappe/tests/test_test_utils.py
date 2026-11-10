@@ -1,12 +1,30 @@
 import logging
 import time
 from datetime import timedelta
-from unittest import TestResult
+from io import StringIO
+from unittest import TestCase, TestResult
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from frappe.testing.result import TestResult as FrappeTestResult
+from frappe.tests import IntegrationTestCase, UnitTestCase
 from frappe.tests.utils.generators import get_missing_records_doctypes, get_modules
 from frappe.utils.data import now_datetime
+
+
+class TestSubtestReporting(UnitTestCase):
+	def test_failed_subtest_reports_original_error_to_plain_stream(self):
+		class FailingSubtest(TestCase):
+			def runTest(self):
+				with self.subTest(layer="site"):
+					raise KeyError("Test Dock Beta")
+
+		stream = StringIO()
+		result = FrappeTestResult(stream, descriptions=True, verbosity=2)
+		FailingSubtest().run(result)
+
+		self.assertEqual(len(result.errors), 1)
+		self.assertIn("KeyError: 'Test Dock Beta'", result.errors[0][1].splitlines()[-1])
+		self.assertIn("layer='site'", stream.getvalue())
 
 
 class TestTestUtils(IntegrationTestCase):

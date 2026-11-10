@@ -102,13 +102,12 @@ class ParallelTestRunner:
 	def retry_failed(self):
 		"""Run the failed tests again in this process, without a new setup, and keep the result of their last run."""
 		for _ in range(self.retries):
-			failed = [test for test, _ in self.test_result.failures + self.test_result.errors]
+			failed = self._failed_test_cases()
 			if not failed or not all(hasattr(test, "_testMethodName") for test in failed):
 				return
 			names = [test.id() for test in failed]
 			first_error = {
-				test.id(): (trace.strip().splitlines() or [""])[-1]
-				for test, trace in self.test_result.failures + self.test_result.errors
+				test.id(): (trace.strip().splitlines() or [""])[-1] for test, trace in failed.items()
 			}
 			self.test_result.printErrors()
 			click.echo(self.test_result)
@@ -120,10 +119,16 @@ class ParallelTestRunner:
 			self.test_result.startTestRun()
 			unittest.TestLoader().loadTestsFromNames(names)(self.test_result)
 			self.test_result.stopTestRun()
-			still = {test.id() for test, _ in self.test_result.failures + self.test_result.errors}
+			still = {test.id() for test in self._failed_test_cases()}
 			if flaky := [name for name in names if name not in still]:
 				click.secho(f"Flaky, passed when run again: {', '.join(flaky)}", fg="yellow")
 				report_flaky({name: first_error[name] for name in flaky})
+
+	def _failed_test_cases(self):
+		return {
+			getattr(test, "test_case", test): trace
+			for test, trace in self.test_result.failures + self.test_result.errors
+		}
 
 	def run_tests_for_file(self, file_info):
 		if not file_info:
