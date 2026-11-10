@@ -61,6 +61,8 @@ app.module.patch4
 
 
 class TestPatches(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_patch_module_names(self):
 		frappe.flags.final_patches = []
 		frappe.flags.in_install = True
@@ -92,6 +94,8 @@ class TestPatches(IntegrationTestCase):
 
 
 class TestNeverSkipPatches(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	NEVER_SKIP = "app.module.critical_patch"
 
 	def run_all(self, patches):
