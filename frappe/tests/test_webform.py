@@ -6,6 +6,8 @@ from frappe.www.list import get_list_context
 
 
 class TestWebform(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_webform_publish_functionality(self):
 		request_data = frappe.get_doc("Web Form", "request-data")
 		# publish webform
