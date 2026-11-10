@@ -556,23 +556,18 @@ class TestAPIKeyAuthFailureLog(IntegrationTestCase):
 
 	SUBJECT = "API key authentication failed%"
 
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		cls.user_email = "test_api_auth_failure@example.com"
-		if not frappe.db.exists("User", cls.user_email):
-			frappe.get_doc(doctype="User", email=cls.user_email, first_name="API Auth Failure").insert(
-				ignore_permissions=True
-			)
-		cls.api_secret = generate_keys(cls.user_email)["api_secret"]
-		cls.api_key = frappe.db.get_value("User", cls.user_email, "api_key")
-
 	def setUp(self):
+		super().setUp()
 		self._request = getattr(frappe.local, "request", None)
 		self._request_ip = getattr(frappe.local, "request_ip", None)
 		self._login_manager = getattr(frappe.local, "login_manager", None)
+		self.user_email = f"test-api-auth-failure-{frappe.generate_hash(length=8)}@example.com"
 		self.addCleanup(self._restore)
 		self._reset()
+		frappe.get_doc(
+			doctype="User", email=self.user_email, first_name="API Auth Failure", send_welcome_email=0
+		).insert()
+		self.api_key = generate_keys(self.user_email)["api_key"]
 
 	def _restore(self):
 		frappe.local.request = self._request
@@ -637,9 +632,10 @@ class TestAPIKeyAuthFailureLog(IntegrationTestCase):
 
 	def test_failed_key_lookup_is_rejected_without_a_log_entry(self):
 		self._request_with(self.api_key, "x")
+		missing_doctype = f"Missing API Auth Source {frappe.generate_hash(length=8)}"
 		frappe.db.savepoint("failed_key_lookup")
 		with self.assertRaises(frappe.AuthenticationError):
-			validate_api_key_secret(self.api_key, "x", frappe_authorization_source="ToDo")
+			validate_api_key_secret(self.api_key, "x", frappe_authorization_source=missing_doctype)
 		frappe.db.rollback(save_point="failed_key_lookup")
 
 		self.assertEqual(self._entries(), [])
