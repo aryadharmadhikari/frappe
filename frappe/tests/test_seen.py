@@ -7,6 +7,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestSeen(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def tearDown(self):
 		frappe.set_user("Administrator")
 
