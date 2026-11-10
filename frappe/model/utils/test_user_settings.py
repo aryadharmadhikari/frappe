@@ -7,6 +7,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestUserSettings(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_save_accepts_native_dict(self):
 		# user_settings as a native dict instead of a JSON string (frappe.parse_json passthrough)
 		saved = save("ToDo", {"sort_by": "modified"})
