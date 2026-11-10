@@ -20,6 +20,8 @@ class NamedMemoryDriver(MemoryDriver):
 
 
 class TestRelocateBlobs(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		super().setUp()
 		self.prefix = "relocate" + frappe.generate_hash(length=8)
