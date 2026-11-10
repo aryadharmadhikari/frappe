@@ -6,6 +6,8 @@ from frappe.utils import validate_url
 
 
 class TestEmailGroup(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_welcome_url(self):
 		email_group = frappe.new_doc("Email Group")
 		email_group.title = "Test"
