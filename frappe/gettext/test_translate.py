@@ -25,6 +25,8 @@ GITIGNORED_FILE = "frappe/public/dist/test_translate_test_gitignore.js"
 
 
 class TestTranslate(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
