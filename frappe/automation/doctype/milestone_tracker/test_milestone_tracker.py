@@ -6,6 +6,8 @@ from frappe.tests import IntegrationTestCase
 
 
 class TestMilestoneTracker(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_milestone(self):
 		frappe.db.delete("Milestone Tracker")
 
