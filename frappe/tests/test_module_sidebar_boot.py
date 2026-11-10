@@ -646,6 +646,8 @@ class TestCodeOnlyModuleHeirs(IntegrationTestCase):
 
 	"""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		frappe.set_user("Administrator")
 
@@ -986,6 +988,8 @@ class TestTwoAppsClaimTheSameEntity(IntegrationTestCase):
 	the payload rather than the comparator, ownership being per-user, is staged for real below.
 
 	"""
+
+	ROLLBACK_AFTER_EACH_TEST = True
 
 	ENTITY = "Test Contested Entity"
 
