@@ -531,13 +531,13 @@ class TestDocument(IntegrationTestCase):
 				}
 			)
 
+			with patch.object(frappe.db, "updatedb"):
+				custom_field.insert(ignore_if_duplicate=True)
 			try:
-				yield custom_field.insert(ignore_if_duplicate=True)
+				yield
 			finally:
 				custom_field.delete()
-				# to truly delete the field
-				# creation is commited due to DDL
-				frappe.db.commit()
+				self.addCleanup(frappe.db.after_rollback.add, lambda: frappe.clear_cache(doctype="Note"))
 
 		with patch_note():
 			doc = frappe.get_last_doc("Note")

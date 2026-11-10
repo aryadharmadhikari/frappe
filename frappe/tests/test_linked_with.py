@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from unittest.mock import patch
 
 import frappe
-from frappe.core.doctype.doctype.test_doctype import new_doctype
+from frappe.core.doctype.doctype.test_doctype import insert_test_doctype, new_doctype
 from frappe.core.doctype.user.test_user import delete_contact
 from frappe.core.doctype.user_permission.user_permission import get_applicable_for_doctype_list
 from frappe.database import savepoint
@@ -66,9 +66,10 @@ def make_linked_entry(target, name=None):
 
 class TestLinkedWith(IntegrationTestCase):
 	def setUp(self):
+		super().setUp()
 		parent_doctype = new_doctype("Parent DocType")
 		parent_doctype.is_submittable = 1
-		parent_doctype.insert()
+		insert_test_doctype(self, parent_doctype)
 
 		child_doctype1 = new_doctype(
 			"Child DocType1",
@@ -95,7 +96,7 @@ class TestLinkedWith(IntegrationTestCase):
 			unique=0,
 		)
 		child_doctype1.is_submittable = 1
-		child_doctype1.insert()
+		insert_test_doctype(self, child_doctype1)
 
 		child_doctype2 = new_doctype(
 			"Child DocType2",
@@ -116,13 +117,7 @@ class TestLinkedWith(IntegrationTestCase):
 			unique=0,
 		)
 		child_doctype2.is_submittable = 1
-		child_doctype2.insert()
-
-	def tearDown(self):
-		for doctype in ["Parent DocType", "Child DocType1", "Child DocType2"]:
-			frappe.delete_doc("DocType", doctype)
-			frappe.db.commit()
-		super().tearDown()
+		insert_test_doctype(self, child_doctype2)
 
 	def test_get_doctype_references_by_link_field(self):
 		references = linked_with.get_references_across_doctypes_by_link_field(to_doctypes=["Parent DocType"])

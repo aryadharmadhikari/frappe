@@ -6,7 +6,7 @@ import frappe
 import frappe.defaults
 import frappe.model.meta
 import frappe.permissions
-from frappe.core.doctype.doctype.test_doctype import new_doctype
+from frappe.core.doctype.doctype.test_doctype import insert_test_doctype, new_doctype
 from frappe.core.doctype.user_permission.user_permission import clear_user_permissions
 from frappe.core.page.permission_manager.permission_manager import add, remove, reset, update
 from frappe.desk.form.load import getdoc
@@ -106,16 +106,15 @@ class TestPermissions(IntegrationTestCase):
 		self.assertSequenceSubset(post.meta.default_fields + post.meta.get_search_fields(), permitted_record)
 
 	def test_owner_only_export_stays_in_can_export(self):
-		role_name = "Test Export Boot Role"
-		user_name = "test_export_boot@example.com"
-		owner_only_dt = "Test Owner Only Export Boot"
-		shared_dt = "Test Shared Export Boot"
+		suffix = frappe.generate_hash(length=8)
+		role_name = "Website Manager"
+		user_name = f"test-export-{suffix}@example.com"
+		owner_only_dt = f"Test Owner Only Export {suffix}"
+		shared_dt = f"Test Shared Export {suffix}"
 
 		frappe.set_user("Administrator")
-		frappe.delete_doc("User", user_name, ignore_missing=True, force=True)
-		for name in (owner_only_dt, shared_dt):
-			frappe.delete_doc("DocType", name, ignore_missing=True, force=True)
-		frappe.delete_doc("Role", role_name, ignore_missing=True, force=True)
+		if frappe.db.db_type == "mariadb":
+			frappe.db.rollback()
 
 		def boot_perms():
 			frappe.clear_cache(user=user_name)
@@ -126,14 +125,15 @@ class TestPermissions(IntegrationTestCase):
 			return perms
 
 		try:
-			frappe.get_doc(doctype="Role", role_name=role_name, desk_access=1).insert()
-
 			for name, if_owner in ((owner_only_dt, 1), (shared_dt, 0)):
-				new_doctype(
-					name,
-					fields=[{"fieldname": "title", "fieldtype": "Data", "label": "Title"}],
-					permissions=[{"role": role_name, "read": 1, "export": 1, "if_owner": if_owner}],
-				).insert()
+				insert_test_doctype(
+					self,
+					new_doctype(
+						name,
+						fields=[{"fieldname": "title", "fieldtype": "Data", "label": "Title"}],
+						permissions=[{"role": role_name, "read": 1, "export": 1, "if_owner": if_owner}],
+					),
+				)
 
 			user = frappe.get_doc(
 				doctype="User", email=user_name, first_name="Export Boot", send_welcome_email=0
@@ -151,11 +151,6 @@ class TestPermissions(IntegrationTestCase):
 			self.assertNotIn(owner_only_dt, perms.can_export_owner_only)
 		finally:
 			frappe.set_user("Administrator")
-			frappe.delete_doc("User", user_name, ignore_missing=True, force=True)
-			frappe.delete_doc("Role", role_name, ignore_missing=True, force=True)
-			for name in (owner_only_dt, shared_dt):
-				frappe.delete_doc("DocType", name, ignore_missing=True, force=True)
-			frappe.db.commit()
 
 	def test_user_permissions_in_doc(self):
 		add_user_permission("Test Blog Category", "_Test Blog Category 1", "test2@example.com")

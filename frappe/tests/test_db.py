@@ -282,17 +282,18 @@ class TestDB(IntegrationTestCase):
 		todo.delete()
 		self.assertIn("tabToDo", frappe.flags.touched_tables)
 
+		from frappe.core.doctype.doctype.test_doctype import _transactional_postgres_schema
+
+		frappe.db.rollback()
 		frappe.flags.touched_tables = set()
-		cf = create_custom_field("ToDo", {"label": "ToDo Custom Field"})
-		# deleting the Custom Field leaves its column on the table, so without dropping it the next
-		# run adds no column, logs no ALTER TABLE, and never sees tabToDo as touched
-		self.addCleanup(frappe.db.commit)
-		self.addCleanup(frappe.db.sql_ddl, "ALTER TABLE `tabToDo` DROP COLUMN `todo_custom_field`")
-		if cf:
+		with _transactional_postgres_schema():
+			cf = create_custom_field("ToDo", {"label": "ToDo Custom Field"})
+		if frappe.db.db_type == "mariadb":
+			self.addCleanup(frappe.db.sql_ddl, "ALTER TABLE `tabToDo` DROP COLUMN `todo_custom_field`")
 			self.addCleanup(cf.delete)
+			self.addCleanup(frappe.db.rollback)
 		self.assertIn("tabToDo", frappe.flags.touched_tables)
 		self.assertIn("tabCustom Field", frappe.flags.touched_tables)
-		frappe.db.commit()
 		frappe.flags.in_migrate = False
 		frappe.flags.touched_tables.clear()
 
@@ -541,7 +542,6 @@ class TestDB(IntegrationTestCase):
 			frappe.db.rollback(save_point=save_point)
 			doc_kept = frappe.get_doc(doctype="ToDo", description="nope").save()
 			created_docs.append(doc_kept.name)
-		frappe.db.commit()
 
 		for d in failed_docs:
 			self.assertFalse(frappe.db.exists("ToDo", d))
@@ -566,8 +566,6 @@ class TestDB(IntegrationTestCase):
 				doc_gone = frappe.get_doc(doctype="ToDo", description="nope").save()
 				failed_docs.append(doc_gone.name)
 				raise SpecificExc
-
-		frappe.db.commit()
 
 		for d in failed_docs:
 			self.assertFalse(frappe.db.exists("ToDo", d))
@@ -3219,10 +3217,10 @@ class TestBulkInsertCopy(IntegrationTestCase):
 		frappe.db.sql_ddl("DROP TABLE IF EXISTS `tabBulkLoadTest`")
 		frappe.db.sql("CREATE TABLE `tabBulkLoadTest` (`name` varchar(140), `qty` int, `note` text)")
 		self.addCleanup(frappe.db.sql_ddl, "DROP TABLE IF EXISTS `tabBulkLoadTest`")
+		self.addCleanup(frappe.db.rollback)
 
 		rows = [("a", 1, "x"), ("b", 2, None), ("c\twith\ttabs", 3, "line\nbreak")]
 		frappe.db.bulk_insert("BulkLoadTest", ["name", "qty", "note"], rows)
-		frappe.db.commit()  # nosemgrep
 
 		got = frappe.db.sql("SELECT `name`, `qty`, `note` FROM `tabBulkLoadTest` ORDER BY `qty`")
 		self.assertEqual(len(got), 3)
@@ -3237,10 +3235,10 @@ class TestBulkInsertCopy(IntegrationTestCase):
 		frappe.db.sql_ddl("DROP TABLE IF EXISTS `tabBulkTimeTest`")
 		frappe.db.sql('CREATE TABLE "tabBulkTimeTest" ("name" varchar(140), "at" time)')
 		self.addCleanup(frappe.db.sql_ddl, "DROP TABLE IF EXISTS `tabBulkTimeTest`")
+		self.addCleanup(frappe.db.rollback)
 
 		value = datetime.timedelta(hours=2, minutes=30, seconds=15)
 		frappe.db.bulk_insert("BulkTimeTest", ["name", "at"], [("a", value)])
-		frappe.db.commit()  # nosemgrep
 
 		self.assertEqual(frappe.db.sql('SELECT "at" FROM "tabBulkTimeTest"')[0][0], value)
 
@@ -3251,9 +3249,9 @@ class TestBulkInsertCopy(IntegrationTestCase):
 		frappe.db.sql_ddl("DROP TABLE IF EXISTS `tabBulkFlagTest`")
 		frappe.db.sql('CREATE TABLE "tabBulkFlagTest" ("name" varchar(140), "flag" smallint)')
 		self.addCleanup(frappe.db.sql_ddl, "DROP TABLE IF EXISTS `tabBulkFlagTest`")
+		self.addCleanup(frappe.db.rollback)
 
 		frappe.db.bulk_insert("BulkFlagTest", ["name", "flag"], [("a", True), ("b", False)])
-		frappe.db.commit()  # nosemgrep
 
 		got = dict(frappe.db.sql('SELECT "name", "flag" FROM "tabBulkFlagTest"'))
 		self.assertEqual(got["a"], 1)

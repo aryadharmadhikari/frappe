@@ -4,6 +4,7 @@ import os
 import random
 import string
 import unittest
+from contextlib import contextmanager
 from unittest.case import skipIf
 from unittest.mock import patch
 
@@ -429,7 +430,7 @@ class TestDocType(IntegrationTestCase):
 		for data in link_doc.get("permissions"):
 			data.submit = 1
 			data.cancel = 1
-		link_doc.insert()
+		insert_test_doctype(self, link_doc)
 
 		doc = new_doctype("Test Doctype")
 		doc.is_submittable = 1
@@ -441,7 +442,7 @@ class TestDocType(IntegrationTestCase):
 		for data in link_doc.get("permissions"):
 			data.submit = 1
 			data.cancel = 1
-		doc.insert()
+		insert_test_doctype(self, doc)
 
 		# create doctype data
 		data_link_doc = frappe.new_doc("Test Linked Doctype")
@@ -465,15 +466,6 @@ class TestDocType(IntegrationTestCase):
 		self.assertEqual(data_link_doc.docstatus, 2)
 		self.assertEqual(data_doc.docstatus, 2)
 
-		# delete doctype record
-		data_doc.delete()
-		data_link_doc.delete()
-
-		# delete doctype
-		link_doc.delete()
-		doc.delete()
-		frappe.db.commit()
-
 	def test_ignore_cancelation_of_linked_doctype_during_cancel(self):
 		import json
 
@@ -485,7 +477,7 @@ class TestDocType(IntegrationTestCase):
 		for data in link_doc.get("permissions"):
 			data.submit = 1
 			data.cancel = 1
-		link_doc.insert()
+		insert_test_doctype(self, link_doc)
 
 		# create first parent doctype
 		test_doc_1 = new_doctype("Test Doctype 1")
@@ -500,7 +492,7 @@ class TestDocType(IntegrationTestCase):
 		for data in test_doc_1.get("permissions"):
 			data.submit = 1
 			data.cancel = 1
-		test_doc_1.insert()
+		insert_test_doctype(self, test_doc_1)
 
 		# crete second parent doctype
 		doc = new_doctype("Test Doctype 2")
@@ -515,7 +507,7 @@ class TestDocType(IntegrationTestCase):
 		for data in link_doc.get("permissions"):
 			data.submit = 1
 			data.cancel = 1
-		doc.insert()
+		insert_test_doctype(self, doc)
 
 		# create doctype data
 		data_link_doc_1 = frappe.new_doc("Test Linked Doctype 1")
@@ -555,18 +547,6 @@ class TestDocType(IntegrationTestCase):
 
 		# ignored doctype 2 during cancel
 		self.assertEqual(data_doc.docstatus, 1)
-
-		# delete doctype record
-		data_doc.cancel()
-		data_doc.delete()
-		data_doc_2.delete()
-		data_link_doc_1.delete()
-
-		# delete doctype
-		link_doc.delete()
-		doc.delete()
-		test_doc_1.delete()
-		frappe.db.commit()
 
 	def test_links_table_fieldname_validation(self):
 		doc = new_doctype("Test Links Table Validation")
@@ -905,7 +885,7 @@ class TestDocType(IntegrationTestCase):
 
 		try:
 			with patch.object(DocType, "run_module_method", spy):
-				doctype = new_doctype(custom=0).insert()
+				doctype = insert_test_doctype(self, new_doctype(custom=0))
 				# Module hooks must be deferred until after the controller file exists.
 				self.assertEqual(method_calls, [])
 
@@ -921,7 +901,6 @@ class TestDocType(IntegrationTestCase):
 			try:
 				if doctype and frappe.db.exists("DocType", doctype.name):
 					doctype.delete()
-					frappe.db.commit()
 			finally:
 				if controller_folder:
 					shutil.rmtree(controller_folder, ignore_errors=True)
@@ -962,7 +941,7 @@ class TestDocType(IntegrationTestCase):
 		def validate(code):
 			ast.parse(code)
 
-		doctype = new_doctype(custom=0).insert()
+		doctype = insert_test_doctype(self, new_doctype(custom=0))
 
 		exporter = TypeExporter(doctype)
 		code = exporter.controller_path.read_text()
@@ -979,7 +958,8 @@ class TestDocType(IntegrationTestCase):
 
 		fieldname = "test_type"
 		doctype.append("fields", {"fieldname": fieldname, "fieldtype": "Int"})
-		doctype.save()
+		with _transactional_postgres_schema():
+			doctype.save()
 
 		new_field_code = exporter.controller_path.read_text()
 		validate(new_field_code)
@@ -988,7 +968,6 @@ class TestDocType(IntegrationTestCase):
 		self.assertIn("Int", new_field_code)
 
 		doctype.delete()
-		frappe.db.commit()
 
 	@unittest.skipUnless(
 		os.access(frappe.get_app_path("frappe"), os.W_OK), "Only run if frappe app paths is writable"
@@ -1172,12 +1151,14 @@ class TestDocType(IntegrationTestCase):
 		self.assertRaises(frappe.ValidationError, doctype.insert)
 
 	def test_delete_doc_clears_cache(self):
-		dt = new_doctype(
-			fields=[{"fieldname": "test_fdname", "fieldtype": "Data", "label": "Test Field"}],
-		).insert()
+		dt = insert_test_doctype(
+			self,
+			new_doctype(
+				fields=[{"fieldname": "test_fdname", "fieldtype": "Data", "label": "Test Field"}],
+			),
+		)
 		frappe.get_meta(dt.name)
 		frappe.delete_doc("DocType", dt.name, force=1, delete_permanently=False)
-		frappe.db.commit()
 		with self.assertRaises(frappe.DoesNotExistError):
 			frappe.get_meta(dt.name)
 
@@ -1229,19 +1210,34 @@ def new_doctype(
 
 def insert_test_doctype(test: IntegrationTestCase, doc: DocType) -> DocType:
 	"""Insert a DocType for one test and clean up schema changes that survive rollback."""
-	doc.insert()
-	if frappe.db.db_type != "sqlite":
+	if doc.is_virtual:
+		with patch.object(frappe.db, "updatedb"):
+			return doc.insert()
+
+	with _transactional_postgres_schema():
+		doc.insert()
+	if frappe.db.db_type == "mariadb":
 		test.addCleanup(_remove_test_doctype, doc)
 	return doc
+
+
+@contextmanager
+def _transactional_postgres_schema():
+	if frappe.db.db_type != "postgres":
+		yield
+		return
+
+	with (
+		patch.object(frappe.db, "commit"),
+		patch.object(frappe.db, "sql_ddl", frappe.db.sql),
+	):
+		yield
 
 
 def _remove_test_doctype(doc: DocType) -> None:
 	frappe.db.rollback()
 	frappe.delete_doc("DocType", doc.name, force=True, ignore_missing=True, delete_permanently=True)
-	if not doc.is_virtual:
-		frappe.db.sql_ddl(f"DROP TABLE IF EXISTS {get_table_name(doc.name, wrap_in_backticks=True)}")
-		if doc.autoname == "autoincrement":
-			sequence = frappe.scrub(f"{doc.name}_id_seq")
-			frappe.db.sql_ddl(f"DROP SEQUENCE IF EXISTS `{sequence}`")
-	if doc.is_virtual or frappe.db.db_type == "postgres":
-		frappe.db.commit()
+	frappe.db.sql_ddl(f"DROP TABLE IF EXISTS {get_table_name(doc.name, wrap_in_backticks=True)}")
+	if doc.autoname == "autoincrement":
+		sequence = frappe.scrub(f"{doc.name}_id_seq")
+		frappe.db.sql_ddl(f"DROP SEQUENCE IF EXISTS `{sequence}`")
