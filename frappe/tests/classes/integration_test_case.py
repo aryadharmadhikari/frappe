@@ -82,12 +82,13 @@ class IntegrationTestCase(UnitTestCase):
 		# Add any necessary teardown code here
 		super().tearDownClass()
 
-	def run(self, result=None):
-		"""Roll back opted-in tests after their cleanups, even if setup fails."""
+	def _callSetUp(self):
 		if self.ROLLBACK_AFTER_EACH_TEST:
 			self.addCleanup(frappe.local.request_cache.clear)
-			self.addCleanup(_rollback_db)
-		return super().run(result)
+			self.addCleanup(frappe.set_user, frappe.session.user)
+			self.addCleanup(setattr, frappe.local, "flags", copy.deepcopy(frappe.local.flags))
+			self.addCleanup(_rollback_test, frappe.local.db)
+		super()._callSetUp()
 
 	def setUp(self) -> None:
 		faulthandler.dump_traceback_later(STUCK_TEST_THRESHOLD, file=sys.__stderr__)
@@ -207,6 +208,31 @@ def _commit_watcher():
 def _rollback_db():
 	frappe.db.value_cache.clear()
 	frappe.db.rollback()
+
+
+def _rollback_test(db):
+	before_rollback = db.before_rollback.cut(0)
+	errors = []
+	_run_rollback_callbacks(before_rollback, errors)
+	after_rollback = db.after_rollback.cut(0)
+	db.rollback()
+	if after_rollback:
+		try:
+			_run_rollback_callbacks(after_rollback, errors)
+		finally:
+			db.before_rollback.reset()
+			db.after_rollback.reset()
+			db.rollback()
+	if errors:
+		raise ExceptionGroup("Test rollback callbacks failed", errors)
+
+
+def _run_rollback_callbacks(callbacks, errors):
+	for callback in callbacks:
+		try:
+			callback()
+		except Exception as error:
+			errors.append(error)
 
 
 def _restore_ctx_locals(flags):

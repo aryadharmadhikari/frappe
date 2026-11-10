@@ -38,6 +38,29 @@ class TestTestUtils(IntegrationTestCase):
 		self.assertIn("RuntimeError: setup failed", result.errors[0][1])
 		self.assertIsNone(frappe.db.get_default(key))
 
+	def test_rollback_contains_callback_writes_and_restores_flags(self):
+		description = frappe.generate_hash()
+		callbacks = []
+
+		class RollbackCase(IntegrationTestCase):
+			ROLLBACK_AFTER_EACH_TEST = True
+
+			def test_callback(self):
+				frappe.flags.ignore_links = True
+				frappe.db.before_rollback.add(lambda: callbacks.append("before"))
+				frappe.db.after_rollback.add(self.write_after_rollback)
+				frappe.db.after_commit.add(lambda: callbacks.append("commit"))
+
+			def write_after_rollback(self):
+				callbacks.append("after")
+				frappe.get_doc(doctype="ToDo", description=description).insert()
+
+		result = RollbackCase("test_callback").run()
+		self.assertTrue(result.wasSuccessful(), result.errors)
+		self.assertEqual(callbacks, ["before", "after"])
+		self.assertFalse(frappe.db.exists("ToDo", {"description": description}))
+		self.assertFalse(frappe.flags.ignore_links)
+
 	def test_document_assertions(self):
 		currency = frappe.new_doc("Currency")
 		currency.currency_name = "STONKS"
