@@ -1240,5 +1240,8 @@ def _remove_test_doctype(doc: DocType) -> None:
 	frappe.delete_doc("DocType", doc.name, force=True, ignore_missing=True, delete_permanently=True)
 	if not doc.is_virtual:
 		frappe.db.sql_ddl(f"DROP TABLE IF EXISTS {get_table_name(doc.name, wrap_in_backticks=True)}")
+		if doc.autoname == "autoincrement":
+			sequence = frappe.scrub(f"{doc.name}_id_seq")
+			frappe.db.sql_ddl(f"DROP SEQUENCE IF EXISTS `{sequence}`")
 	if doc.is_virtual or frappe.db.db_type == "postgres":
 		frappe.db.commit()

@@ -1288,15 +1288,15 @@ def convert_to_symlink(directory):
 
 
 class TestAttachment(IntegrationTestCase):
-	test_doctype = "Test For Attachment"
-	test_child_doctype = "Test For Attachment Child"
-	test_submittable_doctype = "Test For Attachment Submittable"
-	test_protected_doctype = "Test For Attachment Protected"
-
 	def setUp(self):
 		super().setUp()
 		from frappe.core.doctype.doctype.test_doctype import insert_test_doctype
 
+		suffix = frappe.generate_hash(length=8)
+		self.test_doctype = f"Test Attachment {suffix}"
+		self.test_child_doctype = f"Test Attachment Child {suffix}"
+		self.test_submittable_doctype = f"Test Attachment Submittable {suffix}"
+		self.test_protected_doctype = f"Test Attachment Protected {suffix}"
 		insert_test_doctype(
 			self,
 			frappe.get_doc(
@@ -1708,7 +1708,8 @@ class TestChildTableAttachments(IntegrationTestCase):
 		super().setUp()
 		from frappe.core.doctype.doctype.test_doctype import insert_test_doctype, new_doctype
 
-		self.child_doctype = "Test Attachment Child"
+		suffix = frappe.generate_hash(length=8)
+		self.child_doctype = f"Test Attachment Child {suffix}"
 		insert_test_doctype(
 			self,
 			new_doctype(
@@ -1720,7 +1721,7 @@ class TestChildTableAttachments(IntegrationTestCase):
 			),
 		)
 
-		self.second_child_doctype = "Test Attachment Child 2"
+		self.second_child_doctype = f"Test Attachment Child 2 {suffix}"
 		insert_test_doctype(
 			self,
 			new_doctype(
@@ -1732,7 +1733,7 @@ class TestChildTableAttachments(IntegrationTestCase):
 			),
 		)
 
-		self.parent_doctype = "Test Attachment Parent"
+		self.parent_doctype = f"Test Attachment Parent {suffix}"
 		insert_test_doctype(
 			self,
 			new_doctype(
@@ -1760,7 +1761,7 @@ class TestChildTableAttachments(IntegrationTestCase):
 			),
 		)
 
-		self.collision_parent_doctype = "Test Attachment Parent Collision"
+		self.collision_parent_doctype = f"Test Attachment Parent Collision {suffix}"
 		insert_test_doctype(
 			self,
 			new_doctype(
@@ -2914,7 +2915,7 @@ class TestForcePrivateAttachments(IntegrationTestCase):
 		super().setUp()
 		from frappe.core.doctype.doctype.test_doctype import insert_test_doctype, new_doctype
 
-		self.test_doctype = "Test Force Private Attachments"
+		self.test_doctype = f"Test Private Attachments {frappe.generate_hash(length=8)}"
 		insert_test_doctype(
 			self,
 			new_doctype(
