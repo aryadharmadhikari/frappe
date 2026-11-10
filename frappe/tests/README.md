@@ -53,9 +53,9 @@ This class extends `UnitTestCase` and is designed for integration testing. It pr
 - Context managers that depend on a site connection
 - Asserts that depend on a site connection
 
-The base `tearDown()` rolls back uncommitted changes after each test. Create uncommitted
-fixtures in `setUp()` when multiple tests need them. If you override `tearDown()`, call
-`super().tearDown()` after any custom cleanup that needs the test's database changes.
+The base `tearDown()` rolls back uncommitted changes after each test. Create fresh fixtures in
+`setUp()` or in the test that uses them. If you override `tearDown()`, call `super().tearDown()`
+after any custom cleanup that needs the test's database changes.
 
 For a detailed list of context managers, please refer to the code.
 
