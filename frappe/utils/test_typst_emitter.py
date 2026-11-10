@@ -39,6 +39,8 @@ def layout_with(*fields, **extra):
 class TestTypstGate(IntegrationTestCase):
 	"""typst_blockers is the single authority on what may render through Typst."""
 
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def pf(self, **kwargs):
 		defaults = {"custom_format": 0, "print_format_builder_beta": 1, "css": "", "doc_type": "ToDo"}
 		return frappe._dict({**defaults, **kwargs})
@@ -605,6 +607,8 @@ class TestTypstGate(IntegrationTestCase):
 
 
 class TestTypstTranslation(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_string_values_cannot_become_markup(self):
 		hostile = 'quotes " hash #eval [bracket] $math$ \\ backslash'
 		literal = q(hostile)
@@ -678,6 +682,8 @@ class TestTypstTranslation(IntegrationTestCase):
 
 
 class TestTypstRender(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def make(self, layout, **kwargs):
 		pf = frappe.get_doc(
 			{
