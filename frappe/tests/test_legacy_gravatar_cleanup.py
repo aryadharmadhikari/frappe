@@ -37,6 +37,8 @@ def skip_gravatar_deletion_prompt(value):
 
 
 class TestGravatarDeletion(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_delete_gravatar_image_urls(self):
 		user, contact, lead = self.create_gravatar_records()
 
