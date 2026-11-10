@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import set_request
@@ -9,6 +11,8 @@ class TestWebform(IntegrationTestCase):
 	ROLLBACK_AFTER_EACH_TEST = True
 
 	def test_webform_publish_functionality(self):
+		self.enterContext(patch.dict(frappe.conf, developer_mode=0))
+		self.enterContext(patch.object(frappe.local, "request", None, create=True))
 		request_data = frappe.get_doc("Web Form", "request-data")
 		# publish webform
 		request_data.published = True
