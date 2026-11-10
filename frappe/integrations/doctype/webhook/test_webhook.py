@@ -126,19 +126,9 @@ class TestWebhook(IntegrationTestCase):
 		frappe.db.delete("Webhook")
 		frappe.client_cache.delete_value("webhooks")
 		frappe.db.after_rollback.add(lambda: frappe.client_cache.delete_value("webhooks"))
-		self.responses = responses.RequestsMock()
-		self.responses.start()
-		self.addCleanup(self.responses.reset)
-		self.addCleanup(self.responses.stop)
+		self.responses = self.enterContext(responses.RequestsMock())
 		frappe.local._webhook_queue = None
 		self.addCleanup(setattr, frappe.local, "_webhook_queue", None)
-
-		self.responses.add(
-			responses.POST,
-			"https://httpbin.org/post",
-			status=200,
-			json={},
-		)
 
 		webhook_fields = {
 			"webhook_doctype": "User",
@@ -158,6 +148,7 @@ class TestWebhook(IntegrationTestCase):
 	def test_webhook_trigger_with_enabled_webhooks(self):
 		"""Test webhook trigger for enabled webhooks"""
 
+		self.responses.add(responses.POST, self.webhook.request_url, status=200, json={})
 		self.webhook.condition = "doc.email"
 		self.webhook.insert()
 		frappe.get_doc(
