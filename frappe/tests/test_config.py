@@ -6,6 +6,8 @@ from frappe.utils.modules import get_modules_from_all_apps_for_user
 
 
 class TestConfig(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_get_modules(self):
 		frappe_modules = frappe.get_all("Module Def", filters={"app_name": "frappe"}, pluck="name")
 		all_modules_data = get_modules_from_all_apps_for_user()
