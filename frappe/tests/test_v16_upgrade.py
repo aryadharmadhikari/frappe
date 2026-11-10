@@ -24,6 +24,7 @@ import frappe
 from frappe.desk.doctype.sidebar.sidebar import clear_computed_base_cache, item_key, resolve_sidebar
 from frappe.desk.doctype.sidebar.test_sidebar import make_sidebar, no_developer_mode
 from frappe.desk.doctype.workspace.workspace import PRIVATE_MODULE
+from frappe.desk.form.linked_with import capture_pending_side_effects, discard_side_effects_since
 from frappe.patches.v16_0.sidebar_archive import layer_rows, write_user_layer
 from frappe.tests import IntegrationTestCase
 
@@ -86,7 +87,21 @@ def run_conversion() -> list[str]:
 	return lines
 
 
-class TestV16Upgrade(IntegrationTestCase):
+class _V16UpgradeTestCase(IntegrationTestCase):
+	def setUp(self):
+		super().setUp()
+		side_effects = capture_pending_side_effects()
+		frappe.db.savepoint("before_upgrade_test")
+		self.addCleanup(frappe.clear_cache)
+		self.addCleanup(self.rollback_upgrade_test, side_effects)
+
+	def rollback_upgrade_test(self, side_effects):
+		frappe.db.rollback(save_point="before_upgrade_test")
+		frappe.db.release_savepoint("before_upgrade_test")
+		discard_side_effects_since(side_effects)
+
+
+class TestV16Upgrade(_V16UpgradeTestCase):
 	"""One seeded v16 site, and what its modules resolve to afterwards."""
 
 	MODULE = "Test V16 Module"
@@ -98,49 +113,47 @@ class TestV16Upgrade(IntegrationTestCase):
 	PRIVATE_PAGE = "V16 Personal Page"
 	USER = "test-v16-upgrade@example.com"
 
-	ROLLBACK_AFTER_EACH_TEST = True
-
-	def setUp(self):
-		super().setUp()
-		self.addCleanup(frappe.clear_cache)
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
 		frappe.set_user("Administrator")
 
 		with no_developer_mode():
-			for module in (self.MODULE, self.QUIET_MODULE, self.SHIPPED_MODULE):
+			for module in (cls.MODULE, cls.QUIET_MODULE, cls.SHIPPED_MODULE):
 				frappe.get_doc(
 					{"doctype": "Module Def", "module_name": module, "app_name": "frappe"}
 				).insert()
 				clear_computed_base_cache(module)
 
-		for name in (self.REPORT, self.OTHER_REPORT):
+		for name in (cls.REPORT, cls.OTHER_REPORT):
 			frappe.get_doc(
 				{
 					"doctype": "Report",
 					"report_name": name,
 					"ref_doctype": "ToDo",
 					"report_type": "Report Builder",
-					"module": self.MODULE,
+					"module": cls.MODULE,
 					"is_standard": "No",
 				}
 			).insert()
-		clear_computed_base_cache(self.MODULE)
+		clear_computed_base_cache(cls.MODULE)
 
 		frappe.get_doc(
 			{
 				"doctype": "Report",
-				"report_name": self.SHIPPED_REPORT,
+				"report_name": cls.SHIPPED_REPORT,
 				"ref_doctype": "ToDo",
 				"report_type": "Report Builder",
-				"module": self.SHIPPED_MODULE,
+				"module": cls.SHIPPED_MODULE,
 				"is_standard": "No",
 			}
 		).insert()
-		clear_computed_base_cache(self.SHIPPED_MODULE)
+		clear_computed_base_cache(cls.SHIPPED_MODULE)
 
 		frappe.get_doc(
 			{
 				"doctype": "User",
-				"email": self.USER,
+				"email": cls.USER,
 				"first_name": "V16",
 				"send_welcome_email": 0,
 				"roles": [{"role": "System Manager"}],
@@ -151,11 +164,11 @@ class TestV16Upgrade(IntegrationTestCase):
 		frappe.get_doc(
 			{
 				"doctype": "Workspace",
-				"title": self.PRIVATE_PAGE,
-				"label": self.PRIVATE_PAGE,
-				"module": self.MODULE,
+				"title": cls.PRIVATE_PAGE,
+				"label": cls.PRIVATE_PAGE,
+				"module": cls.MODULE,
 				"public": 0,
-				"for_user": self.USER,
+				"for_user": cls.USER,
 				"content": "[]",
 			}
 		).insert(ignore_permissions=True)
@@ -165,43 +178,43 @@ class TestV16Upgrade(IntegrationTestCase):
 		archive(
 			"V16 Primary",
 			[
-				{"type": "Link", "link_type": "Report", "link_to": self.REPORT, "label": "Report"},
+				{"type": "Link", "link_type": "Report", "link_to": cls.REPORT, "label": "Report"},
 				{"type": "Link", "link_type": "DocType", "link_to": "ToDo", "label": "Todos"},
 			],
-			module=self.MODULE,
+			module=cls.MODULE,
 			standard=1,
 		)
 		archive(
 			"V16 Secondary",
-			[{"type": "Link", "link_type": "Report", "link_to": self.OTHER_REPORT, "label": "Other"}],
-			module=self.MODULE,
+			[{"type": "Link", "link_type": "Report", "link_to": cls.OTHER_REPORT, "label": "Other"}],
+			module=cls.MODULE,
 			standard=1,
 		)
 		archive(
 			"V16 Primary-test-v16-upgrade@example.com",
-			[{"type": "Link", "link_type": "Report", "link_to": self.OTHER_REPORT, "label": "Mine"}],
-			module=self.MODULE,
-			for_user=self.USER,
+			[{"type": "Link", "link_type": "Report", "link_to": cls.OTHER_REPORT, "label": "Mine"}],
+			module=cls.MODULE,
+			for_user=cls.USER,
 		)
 		archive(
 			"V16 My Workspaces",
-			[{"type": "Link", "link_type": "Workspace", "link_to": self.PRIVATE_PAGE}],
-			module=self.MODULE,
+			[{"type": "Link", "link_type": "Workspace", "link_to": cls.PRIVATE_PAGE}],
+			module=cls.MODULE,
 		)
 		archive(
-			f"My Workspaces-{self.USER}",
-			[{"type": "Link", "link_type": "Workspace", "link_to": self.PRIVATE_PAGE}],
-			module=self.MODULE,
-			for_user=self.USER,
+			f"My Workspaces-{cls.USER}",
+			[{"type": "Link", "link_type": "Workspace", "link_to": cls.PRIVATE_PAGE}],
+			module=cls.MODULE,
+			for_user=cls.USER,
 		)
 
 		# An app that *has* re-exported: it ships the module's sidebar in the current model, and
 		# its old fixture is still sitting in the archive saying something different.
-		self.shipped = make_sidebar(self.SHIPPED_MODULE)
+		cls.shipped = make_sidebar(cls.SHIPPED_MODULE)
 		archive(
 			"V16 Re-exported",
-			[{"type": "Link", "link_type": "Report", "link_to": self.SHIPPED_REPORT, "label": "Old"}],
-			module=self.SHIPPED_MODULE,
+			[{"type": "Link", "link_type": "Report", "link_to": cls.SHIPPED_REPORT, "label": "Old"}],
+			module=cls.SHIPPED_MODULE,
 			standard=1,
 		)
 
@@ -211,13 +224,18 @@ class TestV16Upgrade(IntegrationTestCase):
 		# never find, so they are cleared and the conversion starts from what v16 actually left.
 		for name in frappe.get_all(
 			"Custom Sidebar",
-			filters={"module": ["in", [self.MODULE, self.QUIET_MODULE, self.SHIPPED_MODULE, PRIVATE_MODULE]]},
+			filters={"module": ["in", [cls.MODULE, cls.QUIET_MODULE, cls.SHIPPED_MODULE, PRIVATE_MODULE]]},
 			pluck="name",
 		):
 			frappe.delete_doc("Custom Sidebar", name, force=True, ignore_permissions=True)
 
-		self.before = frappe.db.count("Workspace Sidebar"), frappe.db.count("Workspace Sidebar Item")
-		self.output = run_conversion()
+		cls.before = frappe.db.count("Workspace Sidebar"), frappe.db.count("Workspace Sidebar Item")
+		cls.output = run_conversion()
+
+	@classmethod
+	def tearDownClass(cls):
+		frappe.clear_cache()
+		super().tearDownClass()
 
 	def resolved(self, user=None):
 		"""What the module resolves to for this user, asked of the resolver itself."""
@@ -487,7 +505,7 @@ class TestV16Upgrade(IntegrationTestCase):
 		self.assertEqual(base.module, self.QUIET_MODULE)
 
 
-class TestTheArchiveIsInert(IntegrationTestCase):
+class TestTheArchiveIsInert(_V16UpgradeTestCase):
 	"""Nothing reads it at runtime and nothing writes a row to it."""
 
 	def test_nobody_can_create_a_row(self):
@@ -521,7 +539,7 @@ class TestTheArchiveIsInert(IntegrationTestCase):
 		self.assertNotIn("Workspace Sidebar", ORPHANABLE_ENTITIES + APP_LEVEL_ENTITIES)
 
 
-class TestTheIntermediateColumnIsGone(IntegrationTestCase):
+class TestTheIntermediateColumnIsGone(_V16UpgradeTestCase):
 	"""It never shipped in any release, so it goes outright, with no patch and no notice."""
 
 	def test_the_workspace_has_no_sidebar_items(self):
@@ -534,7 +552,7 @@ class TestTheIntermediateColumnIsGone(IntegrationTestCase):
 		self.assertNotIn("sidebar_items", patches)
 
 
-class TestALinkThatNoLongerResolves(IntegrationTestCase):
+class TestALinkThatNoLongerResolves(_V16UpgradeTestCase):
 	"""A v16 site's rows outlive the things they point at, and the migrate has to survive that.
 
 	The archive has been filling up for two release lines, and nothing pruned it when an app
@@ -551,23 +569,21 @@ class TestALinkThatNoLongerResolves(IntegrationTestCase):
 	GONE = "V16 Doctype That Was Deleted"
 	USER = "test-v16-dangling@example.com"
 
-	ROLLBACK_AFTER_EACH_TEST = True
-
-	def setUp(self):
-		super().setUp()
-		self.addCleanup(frappe.clear_cache)
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
 		frappe.set_user("Administrator")
 
 		with no_developer_mode():
 			frappe.get_doc(
-				{"doctype": "Module Def", "module_name": self.MODULE, "app_name": "frappe"}
+				{"doctype": "Module Def", "module_name": cls.MODULE, "app_name": "frappe"}
 			).insert()
-			clear_computed_base_cache(self.MODULE)
+			clear_computed_base_cache(cls.MODULE)
 
 		frappe.get_doc(
 			{
 				"doctype": "User",
-				"email": self.USER,
+				"email": cls.USER,
 				"first_name": "V16 Dangling",
 				"send_welcome_email": 0,
 				"roles": [{"role": "System Manager"}],
@@ -578,12 +594,17 @@ class TestALinkThatNoLongerResolves(IntegrationTestCase):
 		# links would convert even if the dead one were quietly dropped.
 		items = [
 			{"type": "Link", "link_type": "DocType", "link_to": "ToDo", "label": "Todos"},
-			{"type": "Link", "link_type": "DocType", "link_to": self.GONE, "label": "Gone"},
+			{"type": "Link", "link_type": "DocType", "link_to": cls.GONE, "label": "Gone"},
 		]
-		archive("V16 Dangling", items, module=self.MODULE, standard=1, ignore_links=True)
-		archive(f"V16 Dangling-{self.USER}", items, module=self.MODULE, for_user=self.USER, ignore_links=True)
+		archive("V16 Dangling", items, module=cls.MODULE, standard=1, ignore_links=True)
+		archive(f"V16 Dangling-{cls.USER}", items, module=cls.MODULE, for_user=cls.USER, ignore_links=True)
 
-		self.output = run_conversion()
+		cls.output = run_conversion()
+
+	@classmethod
+	def tearDownClass(cls):
+		frappe.clear_cache()
+		super().tearDownClass()
 
 	def test_the_doctype_really_is_gone(self):
 		"""The premise. If something ever creates it, these tests would pass without testing
@@ -603,7 +624,7 @@ class TestALinkThatNoLongerResolves(IntegrationTestCase):
 		self.assertTrue(frappe.db.exists("Custom Sidebar", {"module": self.MODULE, "user": self.USER}))
 
 
-class TestRowTypesTheNewSidebarDropped(IntegrationTestCase):
+class TestRowTypesTheNewSidebarDropped(_V16UpgradeTestCase):
 	"""v16's sidebar editor offered `Spacer` and `Sidebar Item Group` rows. A site that used either
 	must still migrate: spacers carry over, and the report-group button, whose doctype is gone, is
 	left behind.
@@ -612,21 +633,19 @@ class TestRowTypesTheNewSidebarDropped(IntegrationTestCase):
 	MODULE = "Test V16 Spacer Module"
 	USER = "test-v16-spacer@example.com"
 
-	ROLLBACK_AFTER_EACH_TEST = True
-
-	def setUp(self):
-		super().setUp()
-		self.addCleanup(frappe.clear_cache)
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
 		frappe.set_user("Administrator")
 
 		with no_developer_mode():
 			frappe.get_doc(
-				{"doctype": "Module Def", "module_name": self.MODULE, "app_name": "frappe"}
+				{"doctype": "Module Def", "module_name": cls.MODULE, "app_name": "frappe"}
 			).insert()
-			clear_computed_base_cache(self.MODULE)
+			clear_computed_base_cache(cls.MODULE)
 
 		frappe.get_doc(
-			{"doctype": "User", "email": self.USER, "first_name": "V16 Spacer", "send_welcome_email": 0}
+			{"doctype": "User", "email": cls.USER, "first_name": "V16 Spacer", "send_welcome_email": 0}
 		).insert(ignore_if_duplicate=True).add_roles("Desk User")
 
 		items = [
@@ -636,12 +655,17 @@ class TestRowTypesTheNewSidebarDropped(IntegrationTestCase):
 			{"type": "Link", "link_type": "DocType", "link_to": "Event", "label": "Events"},
 			{"type": "Spacer"},
 		]
-		archive("V16 Spacers", items, module=self.MODULE, standard=1)
+		archive("V16 Spacers", items, module=cls.MODULE, standard=1)
 		# a second sidebar in the module, merged into the same base, with an unnamed spacer of its own
 		# and a title as long as v16 allowed, which a spacer label must not overflow
-		archive("V16 More Spacers ".ljust(140, "x"), [{"type": "Spacer"}], module=self.MODULE, standard=1)
-		archive(f"V16 Spacers-{self.USER}", items, module=self.MODULE, for_user=self.USER)
-		self.output = run_conversion()
+		archive("V16 More Spacers ".ljust(140, "x"), [{"type": "Spacer"}], module=cls.MODULE, standard=1)
+		archive(f"V16 Spacers-{cls.USER}", items, module=cls.MODULE, for_user=cls.USER)
+		cls.output = run_conversion()
+
+	@classmethod
+	def tearDownClass(cls):
+		frappe.clear_cache()
+		super().tearDownClass()
 
 	def base_types(self):
 		return [row.type for row in frappe.get_doc("Sidebar", {"module": self.MODULE}).items]
@@ -669,7 +693,7 @@ class TestRowTypesTheNewSidebarDropped(IntegrationTestCase):
 		self.assertFalse([row for row in spacers if row.added or row.hidden])
 
 
-class TestAnAppThatMovedItsSidebar(IntegrationTestCase):
+class TestAnAppThatMovedItsSidebar(_V16UpgradeTestCase):
 	"""polished hrms ships v16's `Expenses` as the sidebar of a new module `Expenses`, while the v16
 	row still says `HR`. A row is matched by title first, so it is not built again under `HR`.
 	"""
@@ -678,29 +702,32 @@ class TestAnAppThatMovedItsSidebar(IntegrationTestCase):
 	NEW_MODULE = "Test V16 New Home Module"
 	USER = "test-v16-moved@example.com"
 
-	ROLLBACK_AFTER_EACH_TEST = True
-
-	def setUp(self):
-		super().setUp()
-		self.addCleanup(frappe.clear_cache)
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
 		frappe.set_user("Administrator")
 
 		with no_developer_mode():
-			for module in (self.OLD_MODULE, self.NEW_MODULE):
+			for module in (cls.OLD_MODULE, cls.NEW_MODULE):
 				frappe.get_doc(
 					{"doctype": "Module Def", "module_name": module, "app_name": "frappe"}
 				).insert()
 				clear_computed_base_cache(module)
 
 		frappe.get_doc(
-			{"doctype": "User", "email": self.USER, "first_name": "V16 Moved", "send_welcome_email": 0}
+			{"doctype": "User", "email": cls.USER, "first_name": "V16 Moved", "send_welcome_email": 0}
 		).insert(ignore_if_duplicate=True).add_roles("Desk User")
 
-		app_sidebar(self.NEW_MODULE, "V16 Moved", [link("User", "Users")])
+		app_sidebar(cls.NEW_MODULE, "V16 Moved", [link("User", "Users")])
 		items = [{"type": "Link", "link_type": "DocType", "link_to": "ToDo", "label": "Todos"}]
-		archive("V16 Moved", items, module=self.OLD_MODULE, standard=1)
-		archive(f"V16 Moved-{self.USER}", items, module=self.OLD_MODULE, for_user=self.USER)
+		archive("V16 Moved", items, module=cls.OLD_MODULE, standard=1)
+		archive(f"V16 Moved-{cls.USER}", items, module=cls.OLD_MODULE, for_user=cls.USER)
 		run_conversion()
+
+	@classmethod
+	def tearDownClass(cls):
+		frappe.clear_cache()
+		super().tearDownClass()
 
 	def test_the_old_module_gets_no_second_copy(self):
 		self.assertFalse(frappe.db.exists("Sidebar", {"module": self.OLD_MODULE}))
@@ -710,7 +737,7 @@ class TestAnAppThatMovedItsSidebar(IntegrationTestCase):
 		self.assertFalse(frappe.db.exists("Custom Sidebar", {"module": self.OLD_MODULE, "user": self.USER}))
 
 
-class TestCustomSidebars(IntegrationTestCase):
+class TestCustomSidebars(_V16UpgradeTestCase):
 	"""A sidebar the site made in v16 becomes a custom module of its own.
 
 	It cannot stay under the module v16 filed it in, since that module has the app's sidebar now
@@ -734,40 +761,38 @@ class TestCustomSidebars(IntegrationTestCase):
 	USER = "test-v16-custom@example.com"
 	OTHER_USER = "test-v16-custom-other@example.com"
 
-	ROLLBACK_AFTER_EACH_TEST = True
-
-	def setUp(self):
-		super().setUp()
-		self.addCleanup(frappe.clear_cache)
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
 		frappe.set_user("Administrator")
 
 		with no_developer_mode():
-			for module in (self.HOST, self.CLASH):
+			for module in (cls.HOST, cls.CLASH):
 				frappe.get_doc(
 					{"doctype": "Module Def", "module_name": module, "app_name": "frappe"}
 				).insert()
 				clear_computed_base_cache(module)
-			frappe.get_doc({"doctype": "Module Def", "module_name": self.REUSED, "custom": 1}).insert()
+			frappe.get_doc({"doctype": "Module Def", "module_name": cls.REUSED, "custom": 1}).insert()
 			# placed in an app since removed, as a module left from before placements were cleared
 			frappe.get_doc(
-				{"doctype": "Module Def", "module_name": self.STALE_PLACEMENT, "custom": 1}
+				{"doctype": "Module Def", "module_name": cls.STALE_PLACEMENT, "custom": 1}
 			).insert()
-			frappe.db.set_value("Module Def", self.STALE_PLACEMENT, "app_name", self.REMOVED_APP)
+			frappe.db.set_value("Module Def", cls.STALE_PLACEMENT, "app_name", cls.REMOVED_APP)
 
-		for user in (self.USER, self.OTHER_USER):
+		for user in (cls.USER, cls.OTHER_USER):
 			frappe.get_doc(
 				{"doctype": "User", "email": user, "first_name": "V16 Custom", "send_welcome_email": 0}
 			).insert(ignore_if_duplicate=True).add_roles("Desk User")
 
 		# the app's own sidebar for the module the site filed its sidebars under
-		make_sidebar(self.HOST)
+		make_sidebar(cls.HOST)
 
 		frappe.get_doc(
 			{
 				"doctype": "Workspace",
-				"title": self.SHOWROOM,
-				"label": self.SHOWROOM,
-				"module": self.HOST,
+				"title": cls.SHOWROOM,
+				"label": cls.SHOWROOM,
+				"module": cls.HOST,
 				"public": 1,
 				"content": "[]",
 			}
@@ -777,39 +802,39 @@ class TestCustomSidebars(IntegrationTestCase):
 			{"type": "Link", "link_type": "DocType", "link_to": "ToDo", "label": "Todos"},
 			{"type": "Link", "link_type": "DocType", "link_to": "Event", "label": "Events"},
 		]
-		archive(self.SHOWROOM, items, module=self.HOST)
-		archive(self.CLASH, items, module=self.HOST)
-		archive(self.REUSED, items, module=self.HOST)
-		archive(self.STALE_PLACEMENT, items, module=self.HOST)
-		archive("??", items, module=self.HOST)
-		archive(self.FILTERED, [*items, link("ToDo", "Open Todos", route_options='{"status": "Open"}')])
+		archive(cls.SHOWROOM, items, module=cls.HOST)
+		archive(cls.CLASH, items, module=cls.HOST)
+		archive(cls.REUSED, items, module=cls.HOST)
+		archive(cls.STALE_PLACEMENT, items, module=cls.HOST)
+		archive("??", items, module=cls.HOST)
+		archive(cls.FILTERED, [*items, link("ToDo", "Open Todos", route_options='{"status": "Open"}')])
 
 		# v16 showed a sidebar to whoever its desktop icon showed to: the icon's roles, and those of
 		# the folder it sat in
-		frappe.get_doc({"doctype": "Role", "role_name": self.GATED_ROLE, "desk_access": 1}).insert(
+		frappe.get_doc({"doctype": "Role", "role_name": cls.GATED_ROLE, "desk_access": 1}).insert(
 			ignore_if_duplicate=True
 		)
-		frappe.get_doc("User", self.USER).add_roles(self.GATED_ROLE)
-		for title in (self.GATED, self.OPEN_ICON, self.IN_FOLDER):
-			archive(title, items, module=self.HOST)
-		desktop_icon(self.GATED, link_to=self.GATED, roles=[self.GATED_ROLE])
+		frappe.get_doc("User", cls.USER).add_roles(cls.GATED_ROLE)
+		for title in (cls.GATED, cls.OPEN_ICON, cls.IN_FOLDER):
+			archive(title, items, module=cls.HOST)
+		desktop_icon(cls.GATED, link_to=cls.GATED, roles=[cls.GATED_ROLE])
 		# one gated icon and one open one: the open one showed it to everyone
-		desktop_icon(f"{self.OPEN_ICON} Gated", link_to=self.OPEN_ICON, roles=[self.GATED_ROLE])
-		desktop_icon(self.OPEN_ICON, link_to=self.OPEN_ICON)
-		desktop_icon("V16 Gated Folder", icon_type="Folder", roles=[self.GATED_ROLE])
-		desktop_icon(self.IN_FOLDER, link_to=self.IN_FOLDER, parent_icon="V16 Gated Folder")
+		desktop_icon(f"{cls.OPEN_ICON} Gated", link_to=cls.OPEN_ICON, roles=[cls.GATED_ROLE])
+		desktop_icon(cls.OPEN_ICON, link_to=cls.OPEN_ICON)
+		desktop_icon("V16 Gated Folder", icon_type="Folder", roles=[cls.GATED_ROLE])
+		desktop_icon(cls.IN_FOLDER, link_to=cls.IN_FOLDER, parent_icon="V16 Gated Folder")
 		# frappe's app icon is open to System Managers only
 		frappe.get_doc(
 			{
 				"doctype": "User",
-				"email": self.SYSTEM_MANAGER,
+				"email": cls.SYSTEM_MANAGER,
 				"first_name": "V16 Manager",
 				"send_welcome_email": 0,
 			}
 		).insert(ignore_if_duplicate=True).add_roles("System Manager")
-		archive(self.IN_APP, items, module=self.HOST)
+		archive(cls.IN_APP, items, module=cls.HOST)
 		desktop_icon("V16 App Parent", icon_type="App", app="frappe")
-		desktop_icon(self.IN_APP, link_to=self.IN_APP, parent_icon="V16 App Parent")
+		desktop_icon(cls.IN_APP, link_to=cls.IN_APP, parent_icon="V16 App Parent")
 
 		# what a conversion that put a site's sidebar into an app module would have left behind
 		old_base = frappe.new_doc("Sidebar")
@@ -829,19 +854,22 @@ class TestCustomSidebars(IntegrationTestCase):
 		)
 		with in_patch():
 			old_base.insert(ignore_permissions=True)
-		archive("V16 Old Base", items, module=self.HOST)
-		archive(f"{self.SHOWROOM}-{self.USER}", items[:1], module=self.HOST, for_user=self.USER)
+		archive("V16 Old Base", items, module=cls.HOST)
+		archive(f"{cls.SHOWROOM}-{cls.USER}", items[:1], module=cls.HOST, for_user=cls.USER)
 
 		# what v16 built on its own from an app's workspace: neither flag, and no module. The
 		# app's sidebar is titled after the host, not after the workspace, so a personal copy of
 		# the row has only the workspace to say which module it is laid over.
-		standard_workspace(self.GENERATED, self.HOST)
-		archive(self.GENERATED, [home(self.GENERATED), *items])
-		archive(
-			f"{self.GENERATED}-{self.OTHER_USER}", [home(self.GENERATED), items[0]], for_user=self.OTHER_USER
-		)
+		standard_workspace(cls.GENERATED, cls.HOST)
+		archive(cls.GENERATED, [home(cls.GENERATED), *items])
+		archive(f"{cls.GENERATED}-{cls.OTHER_USER}", [home(cls.GENERATED), items[0]], for_user=cls.OTHER_USER)
 
-		self.output = run_conversion()
+		cls.output = run_conversion()
+
+	@classmethod
+	def tearDownClass(cls):
+		frappe.clear_cache()
+		super().tearDownClass()
 
 	def test_each_becomes_a_custom_module(self):
 		module = frappe.get_doc("Module Def", self.SHOWROOM)
@@ -972,7 +1000,7 @@ class TestCustomSidebars(IntegrationTestCase):
 		self.assertEqual(before, after)
 
 
-class TestV16GeneratedSidebarCleanup(IntegrationTestCase):
+class TestV16GeneratedSidebarCleanup(_V16UpgradeTestCase):
 	"""A site that ran the earlier conversion holds a custom module per sidebar v16 generated from
 	an app's workspace, beside the app's own module. The cleanup takes them out again."""
 
@@ -985,41 +1013,39 @@ class TestV16GeneratedSidebarCleanup(IntegrationTestCase):
 	ADDED_ROW = "V16 Added Generated"
 	USER = "test-v16-cleanup@example.com"
 
-	ROLLBACK_AFTER_EACH_TEST = True
-
-	def setUp(self):
-		super().setUp()
-		self.addCleanup(frappe.clear_cache)
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
 		frappe.set_user("Administrator")
 
 		with no_developer_mode():
-			for module in (self.HELD, self.BARE):
+			for module in (cls.HELD, cls.BARE):
 				frappe.get_doc(
 					{"doctype": "Module Def", "module_name": module, "app_name": "frappe"}
 				).insert()
 				clear_computed_base_cache(module)
 		# one module the app ships a sidebar for, one it does not
-		make_sidebar(self.HELD)
+		make_sidebar(cls.HELD)
 
 		frappe.get_doc(
-			{"doctype": "User", "email": self.USER, "first_name": "V16 Cleanup", "send_welcome_email": 0}
+			{"doctype": "User", "email": cls.USER, "first_name": "V16 Cleanup", "send_welcome_email": 0}
 		).insert(ignore_if_duplicate=True).add_roles("Desk User")
 
 		rows = (
-			(self.HELD_ROW, self.HELD),
-			(self.BARE_ROW, self.BARE),
-			(self.KEPT_ROW, self.HELD),
-			(self.HOMED_ROW, self.HELD),
-			(self.ADDED_ROW, self.HELD),
+			(cls.HELD_ROW, cls.HELD),
+			(cls.BARE_ROW, cls.BARE),
+			(cls.KEPT_ROW, cls.HELD),
+			(cls.HOMED_ROW, cls.HELD),
+			(cls.ADDED_ROW, cls.HELD),
 		)
 		for title, module in rows:
 			standard_workspace(title, module)
 			archive(title, [home(title), link("ToDo", "Todos")], module=module)
-			self.wrongly_converted(title)
+			cls.wrongly_converted(title)
 
 		# where the earlier run put the sidebar, the site added Notes, and the user then hid them,
 		# put Events ahead of the Todos they kept, relabelled those, and named their layer
-		held = f"{self.HELD_ROW} (Custom)"
+		held = f"{cls.HELD_ROW} (Custom)"
 		write_user_layer(
 			held,
 			"",
@@ -1030,13 +1056,13 @@ class TestV16GeneratedSidebarCleanup(IntegrationTestCase):
 			[link("Event", "Events"), link("ToDo", "Todos")], below, dropped={item_key(link("Note", "Notes"))}
 		)
 		next(row for row in rows if row["link_to"] == "ToDo")["label"] = "My Todos"
-		write_user_layer(held, self.USER, rows)
+		write_user_layer(held, cls.USER, rows)
 		frappe.db.set_value(
-			"Custom Sidebar", {"module": held, "user": self.USER}, {"label": "Mine", "header_icon": "star"}
+			"Custom Sidebar", {"module": held, "user": cls.USER}, {"label": "Mine", "header_icon": "star"}
 		)
 		# and added a second sidebar under one of the modules
 		added = frappe.new_doc("Sidebar")
-		added.update({"module": f"{self.ADDED_ROW} (Custom)", "title": "V16 Added Deals"})
+		added.update({"module": f"{cls.ADDED_ROW} (Custom)", "title": "V16 Added Deals"})
 		added.append("items", link("Event", "Deals"))
 		with in_patch():
 			added.insert(ignore_permissions=True)
@@ -1047,7 +1073,7 @@ class TestV16GeneratedSidebarCleanup(IntegrationTestCase):
 				"report_name": "V16 Kept Report",
 				"ref_doctype": "ToDo",
 				"report_type": "Report Builder",
-				"module": f"{self.KEPT_ROW} (Custom)",
+				"module": f"{cls.KEPT_ROW} (Custom)",
 				"is_standard": "No",
 			}
 		).insert()
@@ -1057,7 +1083,7 @@ class TestV16GeneratedSidebarCleanup(IntegrationTestCase):
 				"doctype": "Workspace",
 				"title": "V16 Homed Page",
 				"label": "V16 Homed Page",
-				"module": f"{self.HOMED_ROW} (Custom)",
+				"module": f"{cls.HOMED_ROW} (Custom)",
 				"public": 1,
 				"content": "[]",
 			}
@@ -1068,15 +1094,15 @@ class TestV16GeneratedSidebarCleanup(IntegrationTestCase):
 				"app": "frappe",
 				"user": "",
 				"items": [
-					{"link_type": "Sidebar", "link_to": f"{self.HELD_ROW} (Custom)", "title": self.HELD_ROW}
+					{"link_type": "Sidebar", "link_to": f"{cls.HELD_ROW} (Custom)", "title": cls.HELD_ROW}
 				],
 			}
 		).insert(ignore_permissions=True)
 
-		self.output = []
+		cls.output = []
 		with (
 			in_patch(),
-			patch("click.secho", side_effect=lambda message="", **kwargs: self.output.append(message)),
+			patch("click.secho", side_effect=lambda message="", **kwargs: cls.output.append(message)),
 		):
 			frappe.get_attr(CONVERSION[-1] + ".execute")()
 
@@ -1098,6 +1124,11 @@ class TestV16GeneratedSidebarCleanup(IntegrationTestCase):
 		user = frappe.get_doc("User", cls.USER)
 		user.append("block_modules", {"module": module})
 		user.save(ignore_permissions=True)
+
+	@classmethod
+	def tearDownClass(cls):
+		frappe.clear_cache()
+		super().tearDownClass()
 
 	def test_the_extra_module_goes(self):
 		"""With its sidebar and the page `Module Def.after_insert` made for it."""
