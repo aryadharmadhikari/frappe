@@ -70,6 +70,8 @@ class TestMemoryDriverContract(DriverContractTests, IntegrationTestCase):
 
 
 class TestLocalDriverContract(DriverContractTests, IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def make_driver(self):
 		tmpdir = tempfile.mkdtemp(prefix="frappe-storage-test-")
 		self.addCleanup(shutil.rmtree, tmpdir, ignore_errors=True)
@@ -116,6 +118,8 @@ class TestLocalDriverContract(DriverContractTests, IntegrationTestCase):
 
 
 class TestFake(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def test_fake_swaps_and_restores_driver(self):
 		before_override = getattr(frappe.local, "storage_driver_override", None)
 		before = get_driver()
