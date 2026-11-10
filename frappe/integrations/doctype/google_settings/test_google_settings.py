@@ -8,6 +8,8 @@ from .google_settings import get_file_picker_settings
 
 
 class TestGoogleSettings(IntegrationTestCase):
+	ROLLBACK_AFTER_EACH_TEST = True
+
 	def setUp(self):
 		settings = frappe.get_single("Google Settings")
 		settings.client_id = "test_client_id"
