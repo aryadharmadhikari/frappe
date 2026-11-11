@@ -3,7 +3,7 @@ from unittest.case import skipIf
 from unittest.mock import patch
 
 import frappe
-from frappe.core.doctype.doctype.test_doctype import new_doctype
+from frappe.core.doctype.doctype.test_doctype import _remove_test_doctype, new_doctype
 from frappe.core.utils import find
 from frappe.custom.doctype.property_setter.property_setter import (
 	delete_property_setter,
@@ -13,14 +13,13 @@ from frappe.database import savepoint
 from frappe.query_builder.utils import db_type_is
 from frappe.tests import IntegrationTestCase
 from frappe.tests.test_query_builder import run_only_if, unimplemented_for
+from frappe.tests.utils import cleanup_committed_test_data
 from frappe.utils import cstr
 
 
 class TestDBUpdate(IntegrationTestCase):
 	def test_db_update(self):
-		doctype = "User"
-		frappe.reload_doctype("User", force=True)
-		frappe.model.meta.trim_tables("User")
+		doctype = self.create_schema_fixture()
 		make_property_setter(doctype, "bio", "fieldtype", "Text", "Data")
 		make_property_setter(doctype, "middle_name", "fieldtype", "Data", "Text")
 		make_property_setter(doctype, "enabled", "default", "1", "Int")
@@ -47,65 +46,67 @@ class TestDBUpdate(IntegrationTestCase):
 			self.assertIn(cstr(table_column.default) or "NULL", [cstr(default), f"'{default}'"])
 
 	def test_index_and_unique_constraints(self):
-		doctype = "User"
-		frappe.reload_doctype("User", force=True)
-		frappe.model.meta.trim_tables("User")
-
-		def _cleanup():
-			# DDL and inserts in this test auto-commit, so we must explicitly undo.
-			# Leaving middle_name with unique=1 breaks subsequent bench migrate runs.
-			delete_property_setter(doctype, field_name="middle_name")
-			frappe.db.updatedb(doctype)
-			frappe.reload_doctype(doctype, force=True)
-
-		self.addCleanup(_cleanup)
+		doctype = self.create_schema_fixture()
 
 		make_property_setter(doctype, "middle_name", "unique", "1", "Check")
 		frappe.db.updatedb(doctype)
-		middle_name_in_table = get_table_column("User", "middle_name")
+		middle_name_in_table = get_table_column(doctype, "middle_name")
 		self.assertTrue(middle_name_in_table.unique)
 
 		make_property_setter(doctype, "middle_name", "unique", "0", "Check")
 		frappe.db.updatedb(doctype)
-		middle_name_in_table = get_table_column("User", "middle_name")
+		middle_name_in_table = get_table_column(doctype, "middle_name")
 		self.assertFalse(middle_name_in_table.unique)
 
 		make_property_setter(doctype, "middle_name", "search_index", "1", "Check")
 		frappe.db.updatedb(doctype)
-		middle_name_in_table = get_table_column("User", "middle_name")
+		middle_name_in_table = get_table_column(doctype, "middle_name")
 		self.assertTrue(middle_name_in_table.index)
 
 		make_property_setter(doctype, "middle_name", "search_index", "0", "Check")
 		frappe.db.updatedb(doctype)
-		middle_name_in_table = get_table_column("User", "middle_name")
+		middle_name_in_table = get_table_column(doctype, "middle_name")
 		self.assertFalse(middle_name_in_table.index)
 
 		make_property_setter(doctype, "middle_name", "search_index", "1", "Check")
 		make_property_setter(doctype, "middle_name", "unique", "1", "Check")
 		frappe.db.updatedb(doctype)
-		middle_name_in_table = get_table_column("User", "middle_name")
+		middle_name_in_table = get_table_column(doctype, "middle_name")
 		self.assertTrue(middle_name_in_table.index)
 		self.assertTrue(middle_name_in_table.unique)
 
 		make_property_setter(doctype, "middle_name", "search_index", "1", "Check")
 		make_property_setter(doctype, "middle_name", "unique", "0", "Check")
 		frappe.db.updatedb(doctype)
-		middle_name_in_table = get_table_column("User", "middle_name")
+		middle_name_in_table = get_table_column(doctype, "middle_name")
 		self.assertTrue(middle_name_in_table.index)
 		self.assertFalse(middle_name_in_table.unique)
 
 		make_property_setter(doctype, "middle_name", "search_index", "0", "Check")
 		make_property_setter(doctype, "middle_name", "unique", "1", "Check")
 		frappe.db.updatedb(doctype)
-		middle_name_in_table = get_table_column("User", "middle_name")
+		middle_name_in_table = get_table_column(doctype, "middle_name")
 		self.assertFalse(middle_name_in_table.index)
 		self.assertTrue(middle_name_in_table.unique)
 
 		# explicitly make a text index
 		frappe.db.add_index(doctype, ["email_signature(200)"])
 		frappe.db.updatedb(doctype)
-		email_sig_column = get_table_column("User", "email_signature")
+		email_sig_column = get_table_column(doctype, "email_signature")
 		self.assertEqual(email_sig_column.index, 1)
+
+	def create_schema_fixture(self):
+		doc = new_doctype(
+			fields=[
+				{"fieldname": "bio", "fieldtype": "Text"},
+				{"fieldname": "middle_name", "fieldtype": "Data"},
+				{"fieldname": "enabled", "fieldtype": "Check"},
+				{"fieldname": "email_signature", "fieldtype": "Text"},
+			]
+		)
+		self.addCleanup(cleanup_committed_test_data, _remove_test_doctype, doc)
+		doc.insert()
+		return doc.name
 
 	def check_unique_indexes(self, doctype: str, field: str):
 		if frappe.db.db_type == "postgres":
