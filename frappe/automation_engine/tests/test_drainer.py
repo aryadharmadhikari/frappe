@@ -45,19 +45,18 @@ class TestDrainer(IntegrationTestCase):
 	# instead of relying on the harness transaction rollback.
 
 	def setUp(self):
-		frappe.db.delete(QUEUE)
-		frappe.db.delete("Automation Flow")
+		super().setUp()
 		self.automation = make_automation()
-		# claim_batch commits, so these tests cannot rely on the harness rollback.
-		frappe.db.commit()  # nosemgrep
+		self.addCleanup(self.delete_flow_and_queue)
 
-	def tearDown(self):
-		for name in frappe.get_all(QUEUE, pluck="name"):
+	def delete_flow_and_queue(self):
+		frappe.db.rollback()
+		filters = {"automation": self.automation}
+		for name in frappe.get_all(QUEUE, filters=filters, pluck="name"):
 			clear_effects(name)
-		frappe.db.delete(QUEUE)
-		frappe.db.delete("Automation Flow")
+		frappe.db.delete(QUEUE, filters)
+		frappe.delete_doc_if_exists("Automation Flow", self.automation, force=True)
 		frappe.db.commit()  # nosemgrep
-		super().tearDown()
 
 	def add_row(self, ref_name, run_after=None, status=None):
 		row = frappe.get_doc(
@@ -506,8 +505,8 @@ class TestDrainer(IntegrationTestCase):
 			doc = frappe.get_doc(values).insert(ignore_permissions=True)
 		finally:
 			frappe.flags.skip_automations = previous
-		frappe.db.commit()  # nosemgrep
 		self.addCleanup(delete_committed, doc.doctype, doc.name)
+		frappe.db.commit()  # nosemgrep
 		return doc
 
 	def target_related_note(self):
@@ -526,7 +525,8 @@ def delete_runs(automation):
 
 
 def delete_committed(doctype, name):
-	frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
+	frappe.db.rollback()
+	frappe.delete_doc_if_exists(doctype, name, force=True, ignore_permissions=True)
 	frappe.db.commit()  # nosemgrep
 
 

@@ -2,22 +2,34 @@
 # License: MIT. See LICENSE
 
 import unittest
+from unittest.mock import patch
 
 import frappe
 from frappe.custom.doctype.property_setter.property_setter import make_property_setter
-from frappe.desk.doctype.global_search_settings.global_search_settings import (
-	get_doctypes_for_global_search,
-)
 from frappe.desk.page.setup_wizard.install_fixtures import update_global_search_doctypes
 from frappe.tests import IntegrationTestCase
-from frappe.tests.utils import make_test_objects
 from frappe.utils import global_search, now_datetime
 
 
 class TestGlobalSearch(IntegrationTestCase):
 	def setUp(self):
+		super().setUp()
+		if frappe.db.db_type == "mariadb":
+			_, schema = frappe.db.sql("SHOW CREATE TABLE `__global_search`")[0]
+			frappe.db.sql(schema.replace("CREATE TABLE ", "CREATE TEMPORARY TABLE ", 1))
+			self.addCleanup(self.drop_test_search_index)
+		self.addCleanup(frappe.clear_cache, doctype="Event")
+		frappe.db.after_rollback.add(lambda: frappe.cache.hdel("global_search", "search_priorities"))
+		queue = f"test_global_search:{frappe.generate_hash(length=12)}"
+		self.addCleanup(frappe.cache.delete_value, queue)
+		for command in ("lpush", "rpop"):
+			original = getattr(frappe.cache, command)
+
+			def use_test_queue(key, *args, original=original, **kwargs):
+				return original(queue if key == "global_search_queue" else key, *args, **kwargs)
+
+			self.enterContext(patch.object(frappe.cache, command, use_test_queue))
 		update_global_search_doctypes()
-		global_search.setup_global_search_table()
 		self.assertTrue("__global_search" in frappe.db.get_tables())
 		doctype = "Event"
 		global_search.reset()
@@ -25,18 +37,10 @@ class TestGlobalSearch(IntegrationTestCase):
 		make_property_setter(doctype, "event_type", "in_global_search", 1, "Int")
 		make_property_setter(doctype, "roles", "in_global_search", 1, "Int")
 		make_property_setter(doctype, "repeat_on", "in_global_search", 0, "Int")
-		self.global_search_priorities = get_doctypes_for_global_search()
 
-	def tearDown(self):
-		self.set_global_search_priorities(self.global_search_priorities)
-		frappe.db.delete("ToDo", {"description": "Quarterly roadmap review"})
-		frappe.db.delete("Property Setter", {"doc_type": "Event"})
-		frappe.clear_cache(doctype="Event")
-		frappe.db.delete("Event")
-		frappe.db.delete("__global_search")
-		make_test_objects("Event")
-		frappe.db.commit()
-		super().tearDown()
+	def drop_test_search_index(self):
+		frappe.db.rollback()
+		frappe.db.sql("DROP TEMPORARY TABLE `__global_search`")
 
 	def insert_test_events(self):
 		frappe.db.delete("Event")
@@ -52,7 +56,6 @@ class TestGlobalSearch(IntegrationTestCase):
 			).insert()
 
 		global_search.sync_global_search()
-		frappe.db.commit()
 
 	def test_search(self):
 		self.insert_test_events()
@@ -110,7 +113,6 @@ class TestGlobalSearch(IntegrationTestCase):
 		event = frappe.get_doc("Event", frappe.get_all("Event")[0].name)
 		event.subject = test_subject
 		event.save()
-		frappe.db.commit()
 		global_search.sync_global_search()
 		results = global_search.search("testing global search")
 
@@ -183,7 +185,6 @@ class TestGlobalSearch(IntegrationTestCase):
 
 		frappe.delete_doc("Event", event_name)
 		global_search.sync_global_search()
-		frappe.db.commit()
 
 		results = global_search.search(test_subject)
 		self.assertTrue(
@@ -280,11 +281,12 @@ class TestGlobalSearch(IntegrationTestCase):
 			self.assertEqual(case["result"], field_as_text)
 
 	def test_web_page_index(self):
-		global_search.update_global_search_for_all_web_pages()
+		with patch.dict(frappe.conf, disable_global_search=False):
+			global_search.update_global_search_for_all_web_pages()
 		global_search.sync_global_search()
-		frappe.db.commit()
 		results = global_search.web_search("login")
-		self.assertTrue("login" in results[0].content)
+		self.assertTrue(results)
+		self.assertIn("login", results[0].content.lower())
 		results = global_search.web_search(
 			text="company", scope='manufacturing" UNION ALL SELECT 1,2,3,4,doctype from __global_search'
 		)
