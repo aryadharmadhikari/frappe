@@ -477,24 +477,19 @@ class TestIPRestrictionForAPIAuth(IntegrationTestCase):
 	`Authorization` header takes neither path, so `validate_auth` has to enforce it.
 	"""
 
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		cls.user_email = "test_api_ip_restriction@test.com"
-		if not frappe.db.exists("User", cls.user_email):
-			frappe.get_doc(doctype="User", email=cls.user_email, first_name="API IP Restricted").insert(
-				ignore_permissions=True
-			)
-
-		cls.api_secret = generate_keys(cls.user_email)["api_secret"]
-		cls.api_key = frappe.db.get_value("User", cls.user_email, "api_key")
-		frappe.db.commit()
-
 	def setUp(self):
+		super().setUp()
 		self._request = getattr(frappe.local, "request", None)
 		self._request_ip = getattr(frappe.local, "request_ip", None)
 		self._login_manager = getattr(frappe.local, "login_manager", None)
 		self.addCleanup(self._restore)
+		self.user_email = f"test-api-ip-restriction-{frappe.generate_hash(length=8)}@example.com"
+		frappe.get_doc(
+			doctype="User", email=self.user_email, first_name="API IP Restricted", send_welcome_email=0
+		).insert()
+		keys = generate_keys(self.user_email)
+		self.api_key = keys["api_key"]
+		self.api_secret = keys["api_secret"]
 
 	def _restore(self):
 		frappe.local.request = self._request
