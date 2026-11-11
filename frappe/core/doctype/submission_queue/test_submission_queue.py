@@ -6,6 +6,7 @@ import typing
 
 import frappe
 from frappe.tests import IntegrationTestCase, timeout
+from frappe.tests.utils import cleanup_committed_test_data, wait_for_job
 from frappe.tests.utils.test_capabilities import TestService, requires_test_service
 from frappe.utils.background_jobs import get_queue
 
@@ -17,7 +18,25 @@ if typing.TYPE_CHECKING:
 class TestSubmissionQueue(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
+		super().setUpClass()
 		cls.queue = get_queue(qtype="default")
+
+	def setUp(self):
+		from frappe.core.doctype.doctype.test_doctype import _remove_test_doctype, new_doctype
+
+		super().setUp()
+		doc = new_doctype(is_submittable=True, queue_in_background=True)
+		self.addCleanup(cleanup_committed_test_data, _remove_test_doctype, doc)
+		self.addCleanup(self.delete_queue_rows, doc.name)
+		self.test_doctype = doc.insert().name
+
+	def delete_queue_rows(self, doctype):
+		frappe.db.rollback()
+		filters = {"ref_doctype": doctype}
+		for job_id in frappe.get_all("Submission Queue", filters, pluck="job_id"):
+			if job_id:
+				wait_for_job(job_id, wait_timeout=20)
+		cleanup_committed_test_data(frappe.db.delete, "Submission Queue", filters)
 
 	@timeout(seconds=20)
 	def check_status(self, job: "Job", status, wait=True):
@@ -30,14 +49,9 @@ class TestSubmissionQueue(IntegrationTestCase):
 		self.assertEqual(frappe.get_doc("RQ Job", job.id).status, status)
 
 	def test_queue_operation(self):
-		from frappe.core.doctype.doctype.test_doctype import new_doctype
 		from frappe.core.doctype.submission_queue.submission_queue import queue_submission
 
-		if not frappe.db.table_exists("Test Submission Queue", cached=False):
-			doc = new_doctype("Test Submission Queue", is_submittable=True, queue_in_background=True)
-			doc.insert()
-
-		d = frappe.new_doc("Test Submission Queue")
+		d = frappe.new_doc(self.test_doctype)
 		d.update({"some_fieldname": "Random"})
 		d.insert()
 
@@ -49,7 +63,9 @@ class TestSubmissionQueue(IntegrationTestCase):
 
 		# Waiting for execution
 		time.sleep(4)
-		submission_queue = frappe.get_last_doc("Submission Queue")
+		submission_queue = frappe.get_doc(
+			"Submission Queue", {"ref_doctype": d.doctype, "ref_docname": d.name}
+		)
 
 		# Test queueing / starting
 		job = self.queue.fetch_job(submission_queue.job_id)
@@ -62,13 +78,7 @@ class TestSubmissionQueue(IntegrationTestCase):
 		self.assertFalse(frappe.db.exists("Submission Queue", submission_queue.name))
 
 	def test_force_delete_cleans_up_queued_submission(self):
-		from frappe.core.doctype.doctype.test_doctype import new_doctype
-
-		if not frappe.db.table_exists("Test Submission Queue", cached=False):
-			doc = new_doctype("Test Submission Queue", is_submittable=True, queue_in_background=True)
-			doc.insert()
-
-		d = frappe.get_doc(doctype="Test Submission Queue", some_fieldname="Random").insert()
+		d = frappe.get_doc(doctype=self.test_doctype, some_fieldname="Random").insert()
 		submission_queue = frappe.get_doc(
 			doctype="Submission Queue",
 			ref_doctype=d.doctype,
@@ -81,14 +91,9 @@ class TestSubmissionQueue(IntegrationTestCase):
 		self.assertFalse(frappe.db.exists("Submission Queue", submission_queue.name))
 
 	def test_cancel_operation(self):
-		from frappe.core.doctype.doctype.test_doctype import new_doctype
 		from frappe.core.doctype.submission_queue.submission_queue import queue_submission
 
-		if not frappe.db.table_exists("Test Submission Queue", cached=False):
-			doc = new_doctype("Test Submission Queue", is_submittable=True, queue_in_background=True)
-			doc.insert()
-
-		d = frappe.new_doc("Test Submission Queue")
+		d = frappe.new_doc(self.test_doctype)
 		d.update({"some_fieldname": "Random"})
 		d.insert()
 		d.submit()
@@ -100,7 +105,9 @@ class TestSubmissionQueue(IntegrationTestCase):
 		frappe.db.commit()
 
 		time.sleep(4)
-		submission_queue = frappe.get_last_doc("Submission Queue")
+		submission_queue = frappe.get_doc(
+			"Submission Queue", {"ref_doctype": d.doctype, "ref_docname": d.name}
+		)
 
 		job = self.queue.fetch_job(submission_queue.job_id)
 		self.check_status(job, status="finished")
@@ -109,18 +116,12 @@ class TestSubmissionQueue(IntegrationTestCase):
 		self.assertEqual(d.docstatus, 2)
 
 	def test_cancel_on_cancelled_doc(self):
-		from frappe.core.doctype.doctype.test_doctype import new_doctype
 		from frappe.core.doctype.submission_queue.submission_queue import queue_submission
 
-		if not frappe.db.table_exists("Test Submission Queue", cached=False):
-			doc = new_doctype("Test Submission Queue", is_submittable=True, queue_in_background=True)
-			doc.insert()
-
-		d = frappe.new_doc("Test Submission Queue")
+		d = frappe.new_doc(self.test_doctype)
 		d.update({"some_fieldname": "Random"})
 		d.insert()
 		d.submit()
-		frappe.db.commit()
 
 		existing = frappe.get_doc(
 			{
@@ -131,7 +132,6 @@ class TestSubmissionQueue(IntegrationTestCase):
 			}
 		)
 		existing.insert(d, "Cancel")
-		frappe.db.commit()
 
 		initial_count = frappe.db.count(
 			"Submission Queue", {"ref_doctype": d.doctype, "ref_docname": d.name, "status": "Queued"}
@@ -145,18 +145,10 @@ class TestSubmissionQueue(IntegrationTestCase):
 
 		self.assertEqual(initial_count, final_count)
 
-		existing.delete(ignore_permissions=True)
-		frappe.db.commit()
-
 	def test_latest_submission_requires_read_permission(self):
-		from frappe.core.doctype.doctype.test_doctype import new_doctype
 		from frappe.core.doctype.submission_queue.submission_queue import get_latest_submissions
 
-		if not frappe.db.table_exists("Test Submission Queue", cached=False):
-			doc = new_doctype("Test Submission Queue", is_submittable=True, queue_in_background=True)
-			doc.insert()
-
-		d = frappe.get_doc(doctype="Test Submission Queue", some_fieldname="Random").insert()
+		d = frappe.get_doc(doctype=self.test_doctype, some_fieldname="Random").insert()
 
 		self.addCleanup(frappe.set_user, "Administrator")
 		frappe.set_user("test1@example.com")
