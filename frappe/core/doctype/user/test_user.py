@@ -34,6 +34,7 @@ from frappe.model.delete_doc import delete_doc
 from frappe.tests import IntegrationTestCase
 from frappe.tests.classes.context_managers import change_settings
 from frappe.tests.test_api import FrappeAPITestCase
+from frappe.tests.utils import cleanup_committed_test_data
 from frappe.tests.test_query_builder import db_type_is, unimplemented_for
 from frappe.tests.utils import toggle_test_mode
 from frappe.tests.utils.test_capabilities import TestService, requires_test_service
@@ -1067,23 +1068,28 @@ class TestImpersonation(FrappeAPITestCase):
 def test_user(
 	*, first_name: str | None = None, email: str | None = None, roles: list[str], commit=False, **kwargs
 ):
-	try:
-		first_name = first_name or frappe.generate_hash()
-		email = email or (first_name + "@example.com")
-		user: User = frappe.new_doc(
+	first_name = first_name or frappe.generate_hash()
+	email = email or (first_name + "@example.com")
+	user: User = frappe.new_doc(
 			"User",
 			send_welcome_email=0,
 			email=email,
 			first_name=first_name,
-			**kwargs,
-		)
-		user.append_roles(*roles)
+		**kwargs,
+	)
+	user.append_roles(*roles)
+	try:
 		user.insert()
+		if commit:
+			frappe.db.commit()  # nosemgrep
 		yield user
-		commit and frappe.db.commit()
 	finally:
-		user.delete(force=True, ignore_permissions=True)
-		commit and frappe.db.commit()
+		if commit:
+			cleanup_committed_test_data(
+				frappe.delete_doc_if_exists, "User", email, force=True, ignore_permissions=True
+			)
+		elif user.name:
+			user.delete(force=True, ignore_permissions=True)
 
 
 def delete_contact(user):

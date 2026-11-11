@@ -109,6 +109,7 @@ class TestOAuth20(FrappeRequestTestCase):
 			}
 		)
 		self.oauth_client.insert()
+		self.addCleanup(self.delete_published_oauth_client)
 
 		self.client_id = self.oauth_client.get("client_id")
 		self.client_secret = self.oauth_client.get("client_secret")
@@ -171,10 +172,13 @@ class TestOAuth20(FrappeRequestTestCase):
 		)
 		return OAuthWebRequestValidator().authenticate_client(request)
 
-	def tearDown(self):
+	def delete_published_oauth_client(self):
 		self._start_fresh_database_write()
-		self.oauth_client.delete(force=True)
-		super().tearDown()
+		for doctype in ("OAuth Bearer Token", "OAuth Authorization Code"):
+			for name in frappe.get_all(doctype, {"client": self.oauth_client.name}, pluck="name"):
+				frappe.delete_doc(doctype, name, force=True)
+		frappe.delete_doc_if_exists("OAuth Client", self.oauth_client.name, force=True)
+		frappe.db.commit()  # nosemgrep
 
 	def test_invalid_login(self):
 		with suppress_stdout():
