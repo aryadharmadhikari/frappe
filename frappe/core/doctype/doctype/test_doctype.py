@@ -32,6 +32,7 @@ from frappe.model.meta import Meta
 from frappe.model.sync import remove_orphan_doctypes
 from frappe.modules.import_file import import_doc
 from frappe.tests import IntegrationTestCase
+from frappe.tests.utils import cleanup_committed_test_data
 from frappe.tests.utils.test_capabilities import TestService, requires_test_service
 from frappe.utils import get_table_name
 
@@ -1030,8 +1031,10 @@ class TestDocType(IntegrationTestCase):
 	@patch.dict(frappe.conf, {"developer_mode": 1})
 	@requires_test_service(TestService.BACKGROUND_WORKER)
 	def test_delete_orphaned_doctypes(self):
-		doctype = new_doctype(custom=0).insert()
-		frappe.db.commit()
+		doctype = new_doctype(custom=0)
+		self.addCleanup(cleanup_committed_test_data, _remove_test_doctype, doctype)
+		doctype.insert()
+		frappe.db.commit()  # nosemgrep
 
 		delete_controllers(doctype.name, doctype.module)
 		job = frappe.enqueue(remove_orphan_doctypes)
@@ -1214,11 +1217,10 @@ def insert_test_doctype(test: IntegrationTestCase, doc: DocType) -> DocType:
 		with patch.object(frappe.db, "updatedb"):
 			return doc.insert()
 
-	with _transactional_postgres_schema():
-		doc.insert()
 	if frappe.db.db_type == "mariadb":
 		test.addCleanup(_remove_test_doctype, doc)
-	return doc
+	with _transactional_postgres_schema():
+		return doc.insert()
 
 
 @contextmanager

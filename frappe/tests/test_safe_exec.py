@@ -327,7 +327,14 @@ class TestSSRFGuard(IntegrationTestCase):
 class TestSafeDoc(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
+		from frappe.core.doctype.doctype.test_doctype import _remove_test_doctype
+		from frappe.tests.utils import cleanup_committed_test_data
+
 		super().setUpClass()
+		for name in ("Test SafeDoc Row", "Test SafeDoc Parent"):
+			cls.addClassCleanup(
+				cleanup_committed_test_data, _remove_test_doctype, frappe.get_doc(doctype="DocType", name=name)
+			)
 		if not frappe.db.exists("DocType", "Test SafeDoc Row"):
 			frappe.get_doc(
 				{
@@ -365,12 +372,6 @@ class TestSafeDoc(IntegrationTestCase):
 
 		frappe.db.commit()
 
-	@classmethod
-	def tearDownClass(cls):
-		frappe.delete_doc("DocType", "Test SafeDoc Parent", ignore_missing=True, force=True)
-		frappe.delete_doc("DocType", "Test SafeDoc Row", ignore_missing=True, force=True)
-		frappe.db.commit()
-		super().tearDownClass()
 
 	def _make_parent(self, absolute_value=0):
 		return SafeDoc(
