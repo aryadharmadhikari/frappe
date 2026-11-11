@@ -415,28 +415,34 @@ class TestAuth(IntegrationTestCase):
 	@requires_test_service(TestService.WEB_SERVER)
 	def test_login_with_email_link(self):
 		user = self.test_user_email
+		rate_limit_keys = [f"rl:frappe.www.login.login_via_key:{ip}:3600" for ip in ("127.0.0.1", "::1")]
+		self.addCleanup(frappe.cache.delete_value, rate_limit_keys)
+		frappe.cache.delete_value(rate_limit_keys)
+		link = _generate_temporary_login_link(user, 10)
 
-		# Logs in
-		res = requests.get(_generate_temporary_login_link(user, 10))
-		self.assertEqual(res.status_code, 200)
-		self.assertTrue(res.cookies.get("sid"))
-		self.assertNotEqual(res.cookies.get("sid"), "Guest")
-
-		# Random incorrect URL
-		res = requests.get(_generate_temporary_login_link(user, 10) + "aa")
-		self.assertEqual(res.cookies.get("sid"), "Guest")
-
-		# POST doesn't work
-		res = requests.post(_generate_temporary_login_link(user, 10))
+		res = requests.post(link)
 		self.assertEqual(res.status_code, 403)
 
-		# Rate limiting
+		res = requests.get(link, allow_redirects=False)
+		self.assertEqual(res.status_code, 302)
+		self.assertTrue(res.cookies.get("sid"))
+		self.assertNotEqual(res.cookies.get("sid"), "Guest")
+		session = requests.get(
+			f"{self.HOST_NAME}/api/method/frappe.auth.get_logged_user", cookies=res.cookies
+		)
+		self.assertEqual(session.status_code, 200)
+		self.assertEqual(session.json()["message"], user)
+
+		res = requests.get(link)
+		self.assertEqual(res.status_code, 403)
+		self.assertEqual(res.cookies.get("sid"), "Guest")
+
 		for _ in range(6):
-			res = requests.get(_generate_temporary_login_link(user, 10))
+			res = requests.get(link)
 			if res.status_code == 429:
 				break
 		else:
-			self.fail("Rate limting not working")
+			self.fail("Rate limiting not working")
 
 	@requires_test_service(TestService.WEB_SERVER)
 	def test_correct_cookie_expiry_set(self):
