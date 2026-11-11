@@ -335,7 +335,7 @@ class TestResourceAPI(FrappeAPITestCase):
 class TestWriteResponsesFieldLevelRead(FrappeAPITestCase):
 	def setUp(self):
 		super().setUp()
-		from frappe.core.doctype.doctype.test_doctype import new_doctype
+		from frappe.core.doctype.doctype.test_doctype import _remove_test_doctype, new_doctype
 		from frappe.core.doctype.user.user import generate_keys
 
 		frappe.set_user("Administrator")
@@ -364,19 +364,19 @@ class TestWriteResponsesFieldLevelRead(FrappeAPITestCase):
 				"permlevel": 0,
 			}
 		]
-		self.child = new_doctype(fields=fields, istable=1, permissions=[]).insert().name
-		self.doctype = (
-			new_doctype(
+		child = new_doctype(fields=fields, istable=1, permissions=[])
+		self.addCleanup(cleanup_committed_test_data, _remove_test_doctype, child)
+		self.child = child.insert().name
+		parent = new_doctype(
 				fields=[
 					*fields,
 					{"fieldname": "rows", "fieldtype": "Table", "label": "Rows", "options": self.child},
 				],
 				is_submittable=1,
 				permissions=perms,
-			)
-			.insert()
-			.name
 		)
+		self.addCleanup(cleanup_committed_test_data, _remove_test_doctype, parent)
+		self.doctype = parent.insert().name
 		frappe.get_doc(
 			doctype="User",
 			email=self.user,
@@ -388,8 +388,10 @@ class TestWriteResponsesFieldLevelRead(FrappeAPITestCase):
 		self.headers = {"Authorization": f"token {keys['api_key']}:{keys['api_secret']}"}
 		self.name = frappe.get_doc(doctype=self.doctype, rows=[{}]).insert().name
 		self.row = frappe.db.get_value(self.child, {"parent": self.name})
-		self.webhooks = [
-			frappe.get_doc(
+		self.webhooks = []
+		self.addCleanup(cleanup_committed_test_data, self.remove_webhooks)
+		for event in ("after_insert", "on_update", "on_submit", "on_cancel"):
+			webhook = frappe.get_doc(
 				doctype="Webhook",
 				name=frappe.generate_hash(),
 				webhook_doctype=self.doctype,
@@ -398,8 +400,7 @@ class TestWriteResponsesFieldLevelRead(FrappeAPITestCase):
 				request_structure="JSON",
 				webhook_json='{"secret": "{{ doc.secret }}", "token": "{{ doc.token }}"}',
 			).insert()
-			for event in ("after_insert", "on_update", "on_submit", "on_cancel")
-		]
+			self.webhooks.append(webhook.name)
 		frappe.db.commit()  # nosemgrep
 		frappe.client_cache.delete_value("webhooks")
 		self.sent = []
@@ -426,20 +427,13 @@ class TestWriteResponsesFieldLevelRead(FrappeAPITestCase):
 			method.start()
 			self.addCleanup(method.stop)
 
-	def tearDown(self):
-		try:
-			frappe.set_user("Administrator")
-			frappe.db.rollback()
-			for webhook in self.webhooks:
-				for log in frappe.get_all("Webhook Request Log", {"webhook": webhook.name}, pluck="name"):
-					frappe.delete_doc("Webhook Request Log", log, force=True)
-				frappe.delete_doc("Webhook", webhook.name, force=True)
-			frappe.client_cache.delete_value("webhooks")
-			frappe.delete_doc("DocType", self.doctype, force=True)
-			frappe.delete_doc("DocType", self.child, force=True)
-			frappe.db.commit()  # nosemgrep
-		finally:
-			super().tearDown()
+	def remove_webhooks(self):
+		frappe.set_user("Administrator")
+		for webhook in self.webhooks:
+			for log in frappe.get_all("Webhook Request Log", {"webhook": webhook}, pluck="name"):
+				frappe.delete_doc("Webhook Request Log", log, force=True)
+			frappe.delete_doc_if_exists("Webhook", webhook, force=True)
+		frappe.client_cache.delete_value("webhooks")
 
 	def request(self, method, path, data):
 		response = make_request(
