@@ -7,6 +7,7 @@ from unittest import TestCase, TestResult
 import frappe
 from frappe.testing.result import TestResult as FrappeTestResult
 from frappe.tests import IntegrationTestCase, UnitTestCase
+from frappe.tests.utils import cleanup_committed_test_data
 from frappe.tests.utils.generators import get_missing_records_doctypes, get_modules
 from frappe.utils.data import now_datetime
 
@@ -56,6 +57,30 @@ class TestTestUtils(IntegrationTestCase):
 
 		self.assertTrue(result.wasSuccessful(), result.errors + result.failures)
 		self.assertFalse(frappe.db.exists("ToDo", {"description": description}))
+
+	def test_cleanup_after_failure_removes_published_rows_without_committing_pending_writes(self):
+		published = f"Published cleanup fixture {frappe.generate_hash(length=8)}"
+		pending = f"Pending cleanup fixture {frappe.generate_hash(length=8)}"
+
+		class FailingCase(TestCase):
+			def runTest(self):
+				for description in (published, pending):
+					self.addCleanup(
+						cleanup_committed_test_data, frappe.db.delete, "ToDo", {"description": description}
+					)
+
+				frappe.get_doc(doctype="ToDo", description=published).insert()
+				frappe.db.commit()  # nosemgrep
+				frappe.get_doc(doctype="ToDo", description=pending).insert()
+				self.fail("Failure after publishing the fixture")
+
+		result = FailingCase().run(TestResult())
+
+		self.assertFalse(result.errors)
+		self.assertEqual(len(result.failures), 1)
+		with self.secondary_connection():
+			for description in (published, pending):
+				self.assertFalse(frappe.db.exists("ToDo", {"description": description}))
 
 	def test_thread_locals(self):
 		frappe.flags.temp_flag_to_be_discarded = True
