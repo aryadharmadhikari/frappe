@@ -17,8 +17,8 @@ from frappe.database.utils import FallBackDateTimeStr, convert_backtick_identifi
 from frappe.query_builder import Field
 from frappe.query_builder.functions import Concat_ws
 from frappe.tests import IntegrationTestCase, UnitTestCase, timeout
-from frappe.tests.utils import cleanup_committed_test_data
 from frappe.tests.test_query_builder import db_type_is, run_only_if, unimplemented_for
+from frappe.tests.utils import cleanup_committed_test_data
 from frappe.utils import add_days, now, random_string, set_request
 from frappe.utils.data import now_datetime
 from frappe.utils.testutils import clear_custom_fields

@@ -333,7 +333,9 @@ class TestSafeDoc(IntegrationTestCase):
 		super().setUpClass()
 		for name in ("Test SafeDoc Row", "Test SafeDoc Parent"):
 			cls.addClassCleanup(
-				cleanup_committed_test_data, _remove_test_doctype, frappe.get_doc(doctype="DocType", name=name)
+				cleanup_committed_test_data,
+				_remove_test_doctype,
+				frappe.get_doc(doctype="DocType", name=name),
 			)
 		if not frappe.db.exists("DocType", "Test SafeDoc Row"):
 			frappe.get_doc(
@@ -371,7 +373,6 @@ class TestSafeDoc(IntegrationTestCase):
 			).insert(ignore_permissions=True)
 
 		frappe.db.commit()
-
 
 	def _make_parent(self, absolute_value=0):
 		return SafeDoc(

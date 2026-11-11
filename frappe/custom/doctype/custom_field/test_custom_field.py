@@ -2,10 +2,10 @@
 # License: MIT. See LICENSE
 
 from unittest import skipIf
-
 from unittest.mock import patch
 
 import frappe
+from frappe.core.doctype.doctype.test_doctype import _remove_test_doctype, new_doctype
 from frappe.custom.doctype.custom_field.custom_field import (
 	create_custom_field,
 	create_custom_fields,
@@ -13,7 +13,6 @@ from frappe.custom.doctype.custom_field.custom_field import (
 	rename_fieldname,
 )
 from frappe.custom.doctype.property_setter.property_setter import make_property_setter
-from frappe.core.doctype.doctype.test_doctype import _remove_test_doctype, new_doctype
 from frappe.tests import IntegrationTestCase
 from frappe.tests.utils import cleanup_committed_test_data
 
@@ -41,7 +40,6 @@ class TestCustomField(IntegrationTestCase):
 				],
 			}
 		)
-
 
 		self.assertTrue(frappe.db.exists("Custom Field", "Address-_test_custom_field_1"))
 		self.assertTrue(frappe.db.exists("Custom Field", "Address-_test_custom_field_2"))
@@ -207,7 +205,6 @@ class TestCustomField(IntegrationTestCase):
 		doc = frappe.get_doc(doctype.name, doc.name)  # doc.reload doesn't clear old fields.
 		self.assertEqual(doc.get(new), data)
 		self.assertFalse(doc.get(old))
-
 
 	def test_delete_custom_fields(self):
 		self.enterContext(patch.object(frappe.db, "updatedb"))

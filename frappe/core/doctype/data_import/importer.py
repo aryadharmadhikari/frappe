@@ -160,7 +160,7 @@ class Importer:
 		)
 
 	def import_data(self, *, commit=True):
-		"""Import rows with per-row commits, or leave writes to the caller’s transaction."""
+		"""Import rows with per-row commits, or leave writes to the caller's transaction."""
 		self.before_import()
 
 		# parse docs from rows

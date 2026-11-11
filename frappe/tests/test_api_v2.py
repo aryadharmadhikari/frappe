@@ -231,7 +231,9 @@ class TestResourceAPIV2(FrappeAPITestCase):
 		self.GENERATED_DOCUMENTS.remove(doc_to_delete)
 
 	def test_execute_doc_method_v2(self):
-		response = self.get(self.resource("Website Theme", "Standard", "method", "get_apps"), {"sid": self.sid})
+		response = self.get(
+			self.resource("Website Theme", "Standard", "method", "get_apps"), {"sid": self.sid}
+		)
 		self.assertEqual(response.json["data"][0]["name"], "frappe")
 
 	def test_execute_doc_method_v2_validates_http_method(self):
@@ -263,7 +265,9 @@ class TestResourceAPIV2(FrappeAPITestCase):
 	def test_delete_document_non_existing_v2(self):
 		non_existent_doc = frappe.generate_hash(length=12)
 		with suppress_stdout():
-			response = self.delete(self.resource(self.DOCTYPE, non_existent_doc), query_string={"sid": self.sid})
+			response = self.delete(
+				self.resource(self.DOCTYPE, non_existent_doc), query_string={"sid": self.sid}
+			)
 		self.assertEqual(response.status_code, 404)
 		self.assertEqual(response.json["errors"][0]["type"], "DoesNotExistError")
 		# 404s dont return exceptions
@@ -1284,7 +1288,6 @@ class TestReadOnlyMode(FrappeAPITestCase):
 			)
 		self.assertEqual(response.status_code, 503)
 		self.assertEqual(response.json["errors"][0]["type"], "InReadOnlyMode")
-
 
 
 @whitelist_for_tests()

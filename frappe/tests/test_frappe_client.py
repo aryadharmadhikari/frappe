@@ -32,7 +32,6 @@ class TestFrappeClient(IntegrationTestCase):
 		for name in frappe.get_all("Note", {"title": ("like", self.prefix + "%")}, pluck="name"):
 			frappe.delete_doc("Note", name, force=True)
 
-
 	def test_insert_many(self):
 		server = FrappeClient(get_url(), "Administrator", self.PASSWORD, verify=False)
 		server.insert_many(
@@ -81,7 +80,9 @@ class TestFrappeClient(IntegrationTestCase):
 				{"doctype": "Note", "title": self.title("sixpence")},
 			]
 		)
-		notes = server.get_list("Note", fields=["title"], filters={"title": ("like", self.prefix + "%")}, order_by="creation desc")
+		notes = server.get_list(
+			"Note", fields=["title"], filters={"title": ("like", self.prefix + "%")}, order_by="creation desc"
+		)
 
 		notes = [d.get("title") for d in notes]
 		self.assertEqual(notes[0], self.title("sixpence"))
@@ -122,12 +123,16 @@ class TestFrappeClient(IntegrationTestCase):
 		server = FrappeClient(get_url(), "Administrator", self.PASSWORD, verify=False)
 		server.insert({"doctype": "Note", "title": self.title("get_value"), "content": CONTENT}).get("name")
 
-		self.assertEqual(server.get_value("Note", "content", {"title": self.title("get_value")}).get("content"), CONTENT)
+		self.assertEqual(
+			server.get_value("Note", "content", {"title": self.title("get_value")}).get("content"), CONTENT
+		)
 
 	def test_get_value_by_name(self):
 		server = FrappeClient(get_url(), "Administrator", self.PASSWORD, verify=False)
 		CONTENT = "test get value"
-		NAME = server.insert({"doctype": "Note", "title": self.title("get_value"), "content": CONTENT}).get("name")
+		NAME = server.insert({"doctype": "Note", "title": self.title("get_value"), "content": CONTENT}).get(
+			"name"
+		)
 
 		self.assertEqual(server.get_value("Note", "content", NAME).get("content"), CONTENT)
 
@@ -148,7 +153,10 @@ class TestFrappeClient(IntegrationTestCase):
 		original = frappe.db.get_single_value("Website Settings", "title_prefix")
 		self.addCleanup(
 			cleanup_committed_test_data,
-			frappe.db.set_single_value, "Website Settings", "title_prefix", original,
+			frappe.db.set_single_value,
+			"Website Settings",
+			"title_prefix",
+			original,
 		)
 		server.set_value("Website Settings", "Website Settings", "title_prefix", "test-prefix")
 		self.assertEqual(
@@ -184,9 +192,7 @@ class TestFrappeClient(IntegrationTestCase):
 			{
 				"doctype": "Event",
 				"subject": self.title("Event"),
-				"event_participants": [
-					{"reference_doctype": "Contact", "reference_docname": contacts[0]}
-				],
+				"event_participants": [{"reference_doctype": "Contact", "reference_docname": contacts[0]}],
 			}
 		)
 
@@ -225,7 +231,9 @@ class TestFrappeClient(IntegrationTestCase):
 		server = FrappeClient(get_url(), "Administrator", self.PASSWORD, verify=False)
 		user = f"frappeclient-{frappe.generate_hash(length=10)}@example.com"
 		self.addCleanup(cleanup_committed_test_data, frappe.delete_doc_if_exists, "User", user)
-		server.insert({"doctype": "User", "email": user, "first_name": "FrappeClient", "send_welcome_email": 0})
+		server.insert(
+			{"doctype": "User", "email": user, "first_name": "FrappeClient", "send_welcome_email": 0}
+		)
 		keys = server.post_api("frappe.core.doctype.user.user.generate_keys", {"user": user})
 		api_key = keys["api_key"]
 		generated_secret = keys["api_secret"]

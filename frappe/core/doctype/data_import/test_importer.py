@@ -22,8 +22,8 @@ from frappe.core.doctype.data_import.importer import (
 )
 from frappe.core.doctype.translation.translation import clear_user_translation_cache
 from frappe.tests import IntegrationTestCase
-from frappe.tests.utils import cleanup_committed_test_data
 from frappe.tests.test_query_builder import db_type_is, unimplemented_for
+from frappe.tests.utils import cleanup_committed_test_data
 from frappe.utils import cint, flt, format_duration, getdate
 from frappe.utils.number_format import NumberFormat
 
@@ -39,12 +39,10 @@ def _delete_data_import(data_import_name):
 	frappe.delete_doc("Data Import", data_import_name, force=1, ignore_permissions=True)
 
 
-
 def _delete_file(file_name):
 	if not file_name or not frappe.db.exists("File", file_name):
 		return
 	frappe.delete_doc("File", file_name, force=1, ignore_permissions=True)
-
 
 
 def _delete_doctype_records(doctype, names):
@@ -53,13 +51,11 @@ def _delete_doctype_records(doctype, names):
 			frappe.delete_doc_if_exists(doctype, name, force=1)
 
 
-
 def _delete_import_doc(doctype, name):
 	"""Remove an import document and its logs."""
 	for log in frappe.get_all("Data Import Log", filters={"data_import": name}, pluck="name"):
 		frappe.delete_doc("Data Import Log", log, force=1, ignore_permissions=True)
 	frappe.delete_doc(doctype, name, force=1, ignore_permissions=True)
-
 
 
 def _register_data_import_cleanup(test_case, data_import):
@@ -1357,7 +1353,6 @@ class TestTreeDataImport(ImporterTestCase):
 		cls._ensure_tree_doctype()
 		frappe.db.commit()  # nosemgrep
 
-
 	@classmethod
 	def _ensure_tree_doctype(cls):
 		if frappe.db.exists("DocType", cls.doctype_name):
@@ -1473,7 +1468,6 @@ class TestTreeDataImport(ImporterTestCase):
 		for name in ("Leaf", "Division", "Root"):
 			frappe.delete_doc_if_exists(self.doctype_name, name)
 
-
 	def test_field_autoname_tree_skips_alias_mode(self):
 		self.assertFalse(uses_tree_alias_references(self.doctype_name))
 		self.assertIsNone(get_tree_alias_fieldname(self.doctype_name))
@@ -1501,7 +1495,6 @@ class TestTreeAliasDataImport(ImporterTestCase):
 		cls.register_schema_cleanup(cls.doctype_name)
 		cls._ensure_tree_doctype()
 		frappe.db.commit()  # nosemgrep
-
 
 	@classmethod
 	def _ensure_tree_doctype(cls):
@@ -1561,7 +1554,6 @@ class TestTreeAliasDataImport(ImporterTestCase):
 		for label in reversed(labels):
 			for name in frappe.get_all(self.doctype_name, filters={"node_label": label}, pluck="name"):
 				frappe.delete_doc(self.doctype_name, name, force=1)
-
 
 	def test_upsert_update_does_not_reset_omitted_defaults(self):
 		"""UPSERT update must not overwrite fields omitted from the template with DocType defaults."""

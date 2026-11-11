@@ -34,9 +34,8 @@ from frappe.model.delete_doc import delete_doc
 from frappe.tests import IntegrationTestCase
 from frappe.tests.classes.context_managers import change_settings
 from frappe.tests.test_api import FrappeAPITestCase
-from frappe.tests.utils import cleanup_committed_test_data
 from frappe.tests.test_query_builder import db_type_is, unimplemented_for
-from frappe.tests.utils import toggle_test_mode
+from frappe.tests.utils import cleanup_committed_test_data, toggle_test_mode
 from frappe.tests.utils.test_capabilities import TestService, requires_test_service
 from frappe.utils import add_days, add_to_date, get_url, getdate, now_datetime, sha256_hash, today
 from frappe.utils.data import orjson_dumps
@@ -1071,10 +1070,10 @@ def test_user(
 	first_name = first_name or frappe.generate_hash()
 	email = email or (first_name + "@example.com")
 	user: User = frappe.new_doc(
-			"User",
-			send_welcome_email=0,
-			email=email,
-			first_name=first_name,
+		"User",
+		send_welcome_email=0,
+		email=email,
+		first_name=first_name,
 		**kwargs,
 	)
 	user.append_roles(*roles)

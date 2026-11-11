@@ -21,6 +21,7 @@ from frappe.tests.utils import cleanup_committed_test_data, whitelist_for_tests
 from frappe.tests.utils.test_capabilities import TestService, requires_test_service
 from frappe.utils import cint, get_test_client, get_url
 
+
 @contextmanager
 def suppress_stdout():
 	"""Supress stdout for tests which expectedly make noise
@@ -48,7 +49,6 @@ def make_request(
 	t.start()
 	t.join()
 	return t._return
-
 
 
 class ThreadWithReturnValue(Thread):
@@ -83,6 +83,7 @@ resource_key = {
 
 class FrappeAPITestCase(IntegrationTestCase):
 	version = ""  # Empty implies v1
+
 	@cached_property
 	def TEST_CLIENT(self):
 		return get_test_client()
@@ -361,12 +362,12 @@ class TestWriteResponsesFieldLevelRead(FrappeAPITestCase):
 		self.addCleanup(cleanup_committed_test_data, _remove_test_doctype, child)
 		self.child = child.insert().name
 		parent = new_doctype(
-				fields=[
-					*fields,
-					{"fieldname": "rows", "fieldtype": "Table", "label": "Rows", "options": self.child},
-				],
-				is_submittable=1,
-				permissions=perms,
+			fields=[
+				*fields,
+				{"fieldname": "rows", "fieldtype": "Table", "label": "Rows", "options": self.child},
+			],
+			is_submittable=1,
+			permissions=perms,
 		)
 		self.addCleanup(cleanup_committed_test_data, _remove_test_doctype, parent)
 		self.doctype = parent.insert().name
@@ -880,7 +881,6 @@ class TestAPIResponse(FrappeAPITestCase):
 		for redirect, expected_redirect in expected_redirects.items():
 			response = self.get(f"/login?{urlencode({'redirect-to': redirect})}", {"sid": self.sid})
 			self.assertEqual(response.location, expected_redirect)
-
 
 
 @whitelist_for_tests()
