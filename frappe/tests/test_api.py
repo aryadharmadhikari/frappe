@@ -42,8 +42,8 @@ def make_request(
 	# The WSGI request runs in another thread with its own connection. SQLite
 	# cannot let that connection write while this one retains an uncommitted
 	# fixture and its writer lock, so publish SQLite setup before starting it.
-	if getattr(frappe.local, "db", None) and frappe.db.db_type == "sqlite":
-		frappe.db.commit()  # nosemgrep
+	if (db := getattr(frappe.local, "db", None)) and db.db_type == "sqlite" and db.transaction_writes:
+		db.commit()  # nosemgrep
 
 	t = ThreadWithReturnValue(target=target, args=args, kwargs=kwargs, site=site)
 	t.start()

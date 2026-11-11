@@ -2,6 +2,7 @@
 # See LICENSE
 
 import time
+from unittest.mock import patch
 
 import frappe
 from frappe.core.doctype.doctype.test_doctype import new_doctype
@@ -132,6 +133,8 @@ class TestBulkUpdate(IntegrationTestCase):
 		frappe.db.commit()  # nosemgrep
 		self.wait_for_assertion(lambda: check_child_field(docnames_bg, "_Test Child Updated"))
 
+
+class TestBulkUpdateConditions(IntegrationTestCase):
 	def test_bulk_update_conditions(self):
 		"""Test the whitelisted bulk update method"""
 		todo_names = []
@@ -145,32 +148,25 @@ class TestBulkUpdate(IntegrationTestCase):
 			).insert()
 			todo_names.append(doc.name)
 
-		try:
-			condition_json = frappe.as_json({"status": "Open", "name": ["in", todo_names]})
+		condition_json = frappe.as_json({"status": "Open", "name": ["in", todo_names]})
+		bulk_upd = frappe.get_doc(
+			{
+				"doctype": "Bulk Update",
+				"document_type": "ToDo",
+				"field": "status",
+				"update_value": "Closed",
+				"condition": condition_json,
+				"limit": 5,
+			}
+		)
 
-			bulk_upd = frappe.get_doc(
-				{
-					"doctype": "Bulk Update",
-					"document_type": "ToDo",
-					"field": "status",
-					"update_value": "Closed",
-					"condition": condition_json,
-					"limit": 5,
-				}
-			)
-
+		with patch.object(frappe.db, "commit"):
 			bulk_upd.bulk_update()
 
-			updated_docs = frappe.get_all("ToDo", filters={"name": ["in", todo_names]}, fields=["status"])
+		updated_docs = frappe.get_all("ToDo", filters={"name": ["in", todo_names]}, fields=["status"])
 
-			for doc in updated_docs:
-				self.assertEqual(doc.status, "Closed")
+		for doc in updated_docs:
+			self.assertEqual(doc.status, "Closed")
 
-			remaining_open_count = frappe.db.count("ToDo", {"name": ["in", todo_names], "status": "Open"})
-			self.assertEqual(remaining_open_count, 0)
-
-		finally:
-			for name in todo_names:
-				frappe.delete_doc("ToDo", name)
-			# bulk_update can commit, so its durable fixtures need durable cleanup.
-			frappe.db.commit()  # nosemgrep
+		remaining_open_count = frappe.db.count("ToDo", {"name": ["in", todo_names], "status": "Open"})
+		self.assertEqual(remaining_open_count, 0)

@@ -126,7 +126,8 @@ class TestAppToggle(IntegrationTestCase):
 		self.addCleanup(self.restore_globals)
 
 	def restore_globals(self):
-		"""A toggle commits, so put both globals back whatever the test did to them."""
+		"""Restore the two globals changed by the app toggle."""
+		frappe.db.rollback()
 		frappe.db.set_global("installed_apps", self.installed_apps_before)
 		write_disabled_apps(self.disabled_apps_before)
 
