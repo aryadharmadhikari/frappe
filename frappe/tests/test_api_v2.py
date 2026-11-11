@@ -35,18 +35,19 @@ class TestResourceAPIV2(FrappeAPITestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
+		cls.GENERATED_DOCUMENTS = []
 		for _ in range(20):
 			doc = frappe.get_doc({"doctype": "ToDo", "description": frappe.mock("paragraph")}).insert()
-			cls.GENERATED_DOCUMENTS = []
 			cls.GENERATED_DOCUMENTS.append(doc.name)
 		frappe.db.commit()
 
 	@classmethod
 	def tearDownClass(cls):
-		frappe.db.commit()
+		frappe.db.rollback()
 		for name in cls.GENERATED_DOCUMENTS:
 			frappe.delete_doc_if_exists(cls.DOCTYPE, name)
 		frappe.db.commit()
+		super().tearDownClass()
 
 	@requires_test_service(TestService.WEB_SERVER)
 	def test_unauthorized_call_v2(self):
@@ -198,11 +199,12 @@ class TestResourceAPIV2(FrappeAPITestCase):
 
 	def test_copy_document_v2(self):
 		doc = frappe.get_doc(self.DOCTYPE, self.GENERATED_DOCUMENTS[0])
+		sid = self.sid
 
 		# disabled temporarily to assert that `docstatus` is not copied outside of tests
 		toggle_test_mode(False)
 		try:
-			response = self.get(self.resource(self.DOCTYPE, doc.name, "copy"))
+			response = self.get(self.resource(self.DOCTYPE, doc.name, "copy"), {"sid": sid})
 		finally:
 			toggle_test_mode(True)
 
@@ -232,7 +234,7 @@ class TestResourceAPIV2(FrappeAPITestCase):
 		self.GENERATED_DOCUMENTS.remove(doc_to_delete)
 
 	def test_execute_doc_method_v2(self):
-		response = self.get(self.resource("Website Theme", "Standard", "method", "get_apps"))
+		response = self.get(self.resource("Website Theme", "Standard", "method", "get_apps"), {"sid": self.sid})
 		self.assertEqual(response.json["data"][0]["name"], "frappe")
 
 	def test_execute_doc_method_v2_validates_http_method(self):
@@ -264,7 +266,7 @@ class TestResourceAPIV2(FrappeAPITestCase):
 	def test_delete_document_non_existing_v2(self):
 		non_existent_doc = frappe.generate_hash(length=12)
 		with suppress_stdout():
-			response = self.delete(self.resource(self.DOCTYPE, non_existent_doc))
+			response = self.delete(self.resource(self.DOCTYPE, non_existent_doc), query_string={"sid": self.sid})
 		self.assertEqual(response.status_code, 404)
 		self.assertEqual(response.json["errors"][0]["type"], "DoesNotExistError")
 		# 404s dont return exceptions
@@ -657,6 +659,7 @@ class TestBulkOperationsV2(FrappeAPITestCase):
 		"""Delete `docs`, waiting for `job_id` first: the job touches these same rows."""
 		if job_id:
 			wait_for_job(job_id)
+		frappe.db.rollback()
 		for doc in docs:
 			frappe.delete_doc_if_exists(self.DOCTYPE, doc.name)
 		frappe.db.commit()  # nosemgrep

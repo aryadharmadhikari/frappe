@@ -17,14 +17,9 @@ import frappe
 from frappe.installer import update_site_config
 from frappe.model.document import Document
 from frappe.tests import IntegrationTestCase
-from frappe.tests.utils import whitelist_for_tests
+from frappe.tests.utils import cleanup_committed_test_data, whitelist_for_tests
 from frappe.tests.utils.test_capabilities import TestService, requires_test_service
 from frappe.utils import cint, get_test_client, get_url
-
-try:
-	_site = frappe.local.site
-except Exception:
-	_site = None
 
 authorization_token = None
 
@@ -69,7 +64,7 @@ class ThreadWithReturnValue(Thread):
 			kwargs = {}
 		Thread.__init__(self, group, target, name, args, kwargs)
 		self._return = None
-		self.site = site or _site
+		self.site = site or frappe.local.site
 
 	def run(self):
 		if self._target is not None:
@@ -105,7 +100,9 @@ resource_key = {
 
 class FrappeAPITestCase(IntegrationTestCase):
 	version = ""  # Empty implies v1
-	TEST_CLIENT = get_test_client()
+	@cached_property
+	def TEST_CLIENT(self):
+		return get_test_client()
 
 	@property
 	def site_url(self):
@@ -184,8 +181,7 @@ class TestResourceAPI(FrappeAPITestCase):
 
 	@classmethod
 	def tearDownClass(cls):
-		# End any request transaction before deleting fixtures it may have touched.
-		frappe.db.commit()  # nosemgrep
+		frappe.db.rollback()
 		for name in cls.GENERATED_DOCUMENTS:
 			frappe.delete_doc_if_exists(cls.DOCTYPE, name)
 		frappe.delete_doc_if_exists("User", cls.TEST_USER)
@@ -226,6 +222,7 @@ class TestResourceAPI(FrappeAPITestCase):
 			self.resource(self.DOCTYPE, self.GENERATED_DOCUMENTS[0]),
 			{
 				"expand_links": json.dumps(True),
+				"sid": self.sid,
 			},
 		)
 		self.assertEqual(response.status_code, 200)
@@ -301,7 +298,7 @@ class TestResourceAPI(FrappeAPITestCase):
 
 	def test_delete_document_v1(self):
 		doc_to_delete = choice(self.GENERATED_DOCUMENTS)
-		response = self.delete(self.resource(self.DOCTYPE, doc_to_delete))
+		response = self.delete(self.resource(self.DOCTYPE, doc_to_delete), query_string={"sid": self.sid})
 		self.assertEqual(response.status_code, 202)
 		self.assertDictEqual(response.json, {"data": "ok"})
 
@@ -310,25 +307,14 @@ class TestResourceAPI(FrappeAPITestCase):
 		self.GENERATED_DOCUMENTS.remove(doc_to_delete)
 
 	def test_run_doc_method_v1(self):
-		# test 10: Run whitelisted method on doc via /api/resource
-		# status_code is 403 if no other tests are run before this - it's not logged in
-		self.post(self.resource("Website Theme", "Standard"), {"run_method": "get_apps"})
-		response = self.get(self.resource("Website Theme", "Standard"), {"run_method": "get_apps"})
+		response = self.get(
+			self.resource("Website Theme", "Standard"), {"run_method": "get_apps", "sid": self.sid}
+		)
 
-		self.assertIn(response.status_code, (403, 200))
-
-		if response.status_code == 403:
-			self.assertTrue(set(response.json.keys()) == {"exc_type", "exception", "exc", "_server_messages"})
-			self.assertEqual(response.json.get("exc_type"), "PermissionError")
-			self.assertEqual(
-				response.json.get("exception"), "frappe.exceptions.PermissionError: Not permitted"
-			)
-			self.assertIsInstance(response.json.get("exc"), str)
-
-		elif response.status_code == 200:
-			data = response.json.get("data")
-			self.assertIsInstance(data, list)
-			self.assertIsInstance(data[0], dict)
+		self.assertEqual(response.status_code, 200)
+		data = response.json.get("data")
+		self.assertIsInstance(data, list)
+		self.assertIsInstance(data[0], dict)
 
 	def test_run_doc_method_v1_validates_http_method(self):
 		doc = frappe.get_doc("Website Theme", "Standard")
@@ -353,17 +339,8 @@ class TestWriteResponsesFieldLevelRead(FrappeAPITestCase):
 		from frappe.core.doctype.user.user import generate_keys
 
 		frappe.set_user("Administrator")
-		self.user = "api.writeresponse@example.com"
-		if not frappe.db.exists("User", self.user):
-			frappe.get_doc(
-				doctype="User",
-				email=self.user,
-				first_name="API Write Response",
-				roles=[{"role": "Desk User"}],
-				send_welcome_email=0,
-			).insert()
-		keys = generate_keys(self.user)
-		self.headers = {"Authorization": f"token {keys['api_key']}:{keys['api_secret']}"}
+		self.user = f"api.writeresponse-{frappe.generate_hash(length=8)}@example.com"
+		self.addCleanup(cleanup_committed_test_data, frappe.delete_doc_if_exists, "User", self.user)
 
 		fields = [
 			{"fieldname": "title", "fieldtype": "Data", "label": "Title"},
@@ -400,6 +377,15 @@ class TestWriteResponsesFieldLevelRead(FrappeAPITestCase):
 			.insert()
 			.name
 		)
+		frappe.get_doc(
+			doctype="User",
+			email=self.user,
+			first_name="API Write Response",
+			roles=[{"role": "Desk User"}],
+			send_welcome_email=0,
+		).insert()
+		keys = generate_keys(self.user)
+		self.headers = {"Authorization": f"token {keys['api_key']}:{keys['api_secret']}"}
 		self.name = frappe.get_doc(doctype=self.doctype, rows=[{}]).insert().name
 		self.row = frappe.db.get_value(self.child, {"parent": self.name})
 		self.webhooks = [
@@ -451,7 +437,6 @@ class TestWriteResponsesFieldLevelRead(FrappeAPITestCase):
 			frappe.client_cache.delete_value("webhooks")
 			frappe.delete_doc("DocType", self.doctype, force=True)
 			frappe.delete_doc("DocType", self.child, force=True)
-			frappe.delete_doc_if_exists("User", self.user)
 			frappe.db.commit()  # nosemgrep
 		finally:
 			super().tearDown()
@@ -898,6 +883,8 @@ class TestAPIResponse(FrappeAPITestCase):
 			}
 		)
 		file.insert()
+		self.addCleanup(cleanup_committed_test_data, frappe.delete_doc_if_exists, "File", file.name)
+		frappe.db.commit()  # nosemgrep
 
 		self.assertEqual(self.get(file.unique_url, {"sid": self.sid}).text, test_content)
 		self.assertEqual(self.get(file.file_url, {"sid": self.sid}).text, test_content)
