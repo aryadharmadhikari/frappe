@@ -75,39 +75,19 @@ def _ensure_template_manager_role():
 				"delete": 1,
 			}
 		).insert(ignore_permissions=True)
-	frappe.clear_cache()
-
-
-def _drop_template_manager_role():
-	frappe.db.delete(
-		"Custom DocPerm",
-		{"parent": "Document Template", "role": TEMPLATE_MANAGER_ROLE},
-	)
-	if frappe.db.exists("Role", TEMPLATE_MANAGER_ROLE):
-		frappe.delete_doc("Role", TEMPLATE_MANAGER_ROLE, force=True, ignore_permissions=True)
-	frappe.clear_cache()
+	frappe.clear_cache(doctype="Document Template")
 
 
 class TestDocumentTemplate(IntegrationTestCase):
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
+	def setUp(self):
+		super().setUp()
+		self.enterContext(self.set_user("Administrator"))
+		_delete_test_templates()
+
+	def template_manager(self):
 		_ensure_template_manager_role()
-		_delete_test_templates()
-		frappe.db.commit()  # nosemgrep
-
-	@classmethod
-	def tearDownClass(cls):
-		_drop_template_manager_role()
-		_delete_test_templates()
-		frappe.db.commit()  # nosemgrep
-		super().tearDownClass()
-
-	def tearDown(self):
-		frappe.set_user("Administrator")
-		_delete_test_templates()
-		frappe.db.commit()  # nosemgrep
-		super().tearDown()
+		frappe.db.after_rollback.add(lambda: frappe.clear_cache(doctype="Document Template"))
+		return test_user(roles=[TEMPLATE_MANAGER_ROLE, "Desk User"])
 
 	def _make_template(
 		self,
@@ -367,7 +347,7 @@ class TestDocumentTemplate(IntegrationTestCase):
 		"""Template Manager sees public templates and their own private ones,
 		but not private templates owned by others."""
 		with (
-			test_user(roles=[TEMPLATE_MANAGER_ROLE, "Desk User"]) as manager,
+			self.template_manager() as manager,
 			test_user(roles=["System Manager"]) as other,
 		):
 			pub = self._make_template("tm-pub", private=0, owner=other.name)
@@ -385,7 +365,7 @@ class TestDocumentTemplate(IntegrationTestCase):
 		"""Template Manager role is not enough on its own — the user must also have
 		'create' permission on the reference doctype.  Without it ``get_templates``
 		should raise ``PermissionError``."""
-		with test_user(roles=[TEMPLATE_MANAGER_ROLE, "Desk User"]) as manager:
+		with self.template_manager() as manager:
 			with self.set_user(manager.name):
 				with self.assertRaises(frappe.PermissionError):
 					get_templates(reference_doctype=ADMIN_ONLY_DOCTYPE)
@@ -448,7 +428,7 @@ class TestDocumentTemplate(IntegrationTestCase):
 
 	def test_query_conditions_for_template_manager_has_private_filter(self):
 		"""A non-System-Manager role with write w/o if_owner gets a private filter."""
-		with test_user(roles=[TEMPLATE_MANAGER_ROLE, "Desk User"]) as user:
+		with self.template_manager() as user:
 			cond = get_permission_query_conditions(user.name)
 
 		self.assertNotEqual(cond, "1=0")
@@ -480,7 +460,7 @@ class TestDocumentTemplate(IntegrationTestCase):
 
 	def test_list_view_for_template_manager_excludes_others_private(self):
 		with (
-			test_user(roles=[TEMPLATE_MANAGER_ROLE, "Desk User"]) as manager,
+			self.template_manager() as manager,
 			test_user(roles=["System Manager"]) as other,
 		):
 			pub = self._make_template("tm-pub", private=0)
@@ -512,7 +492,7 @@ class TestDocumentTemplate(IntegrationTestCase):
 			reference_doctype=ADMIN_ONLY_DOCTYPE,
 			data=json.dumps({"first_name": "x"}),
 		)
-		with test_user(roles=[TEMPLATE_MANAGER_ROLE, "Desk User"]) as manager:
+		with self.template_manager() as manager:
 			for ptype in ("read", "write", "delete", "create"):
 				with self.subTest(ptype=ptype):
 					self.assertFalse(has_permission(t, user=manager.name, ptype=ptype))
@@ -545,7 +525,7 @@ class TestDocumentTemplate(IntegrationTestCase):
 		"""Even Template Manager (write w/o owner) cannot see private templates of others."""
 		with (
 			test_user(roles=["Desk User"]) as owner_user,
-			test_user(roles=[TEMPLATE_MANAGER_ROLE, "Desk User"]) as manager,
+			self.template_manager() as manager,
 		):
 			t = self._make_template("perm-priv-tm", private=1, owner=owner_user.name)
 			self.assertFalse(has_permission(t, user=manager.name, ptype="read"))
