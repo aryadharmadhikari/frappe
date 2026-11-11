@@ -37,6 +37,7 @@ from frappe.installer import add_to_installed_apps, remove_app
 from frappe.query_builder.utils import db_type_is
 from frappe.tests import IntegrationTestCase, timeout
 from frappe.tests.test_query_builder import run_only_if
+from frappe.tests.utils import cleanup_committed_test_data
 from frappe.tests.utils.test_capabilities import TestService, requires_test_service
 from frappe.utils import add_to_date, execute_in_shell, get_bench_path, get_bench_relative_path, now
 from frappe.utils.backups import BackupGenerator, fetch_latest_backups
@@ -149,9 +150,6 @@ class BaseTestCommands(IntegrationTestCase):
 
 	@classmethod
 	def execute(self, command, kwargs=None):
-		# tests might have written to DB which wont be visible to commands until we end current transaction
-		frappe.db.commit()
-
 		site = {"site": frappe.local.site}
 		cmd_input = None
 		if kwargs:
@@ -448,30 +446,24 @@ class TestCommands(BaseTestCommands):
 		"Not for SQLite for now",
 	)
 	def test_partial_restore(self):
-		_now = now()
-		for num in range(10):
-			frappe.get_doc(
-				{
-					"doctype": "ToDo",
-					"date": add_to_date(_now, days=num),
-					"description": frappe.mock("paragraph"),
-				}
-			).insert()
-		frappe.db.commit()
-		todo_count = frappe.db.count("ToDo")
+		from frappe.core.doctype.doctype.test_doctype import _remove_test_doctype
 
-		# check if todos exist, create a partial backup and see if the state is the same after restore
-		self.assertIsNot(todo_count, 0)
-		self.execute("bench --site {site} backup --only 'ToDo'")
-		db_path = fetch_latest_backups(partial=True)["database"]
-		self.assertTrue("partial" in db_path)
+		doc = new_doctype()
+		self.addCleanup(cleanup_committed_test_data, _remove_test_doctype, doc)
+		doc.insert()
+		for index in range(10):
+			frappe.get_doc(doctype=doc.name, some_fieldname=f"Restore row {index}").insert()
+		frappe.db.commit()  # nosemgrep
 
-		frappe.db.sql_ddl("DROP TABLE IF EXISTS `tabToDo`")
-		frappe.db.commit()
-
-		self.execute("bench --site {site} partial-restore {path}", {"path": db_path})
+		self.execute("bench --site {site} backup --only {doctype}", {"doctype": shlex.quote(doc.name)})
 		self.assertEqual(self.returncode, 0)
-		self.assertEqual(frappe.db.count("ToDo"), todo_count)
+		db_path = fetch_latest_backups(partial=True)["database"]
+		self.assertIn("partial", db_path)
+
+		frappe.db.sql_ddl(f"DROP TABLE IF EXISTS `tab{doc.name}`")
+		self.execute("bench --site {site} partial-restore {path}", {"path": shlex.quote(db_path)})
+		self.assertEqual(self.returncode, 0)
+		self.assertEqual(frappe.db.count(doc.name), 10)
 
 	@skipIf(
 		frappe.conf.db_type == "sqlite",
@@ -1130,6 +1122,7 @@ class TestRemoveApp(IntegrationTestCase):
 			).insert()
 
 	def delete_uninstall_leftovers(self, module, doctypes):
+		frappe.db.rollback()
 		frappe.flags.in_uninstall = False
 		for doctype in doctypes:
 			frappe.db.sql_ddl(f"DROP TABLE IF EXISTS `tab{doctype}`")
@@ -1242,11 +1235,13 @@ class TestSiteMigration(BaseTestCommands):
 
 class TestAddNewUser(BaseTestCommands):
 	def test_create_user(self):
+		email = f"cli-user-{frappe.generate_hash(length=10)}@example.com"
+		self.addCleanup(cleanup_committed_test_data, frappe.delete_doc_if_exists, "User", email)
 		self.execute(
-			"bench --site {site} add-user test@gmail.com --first-name test --last-name test --password 123 --user-type 'System User' --add-role 'Accounts User' --add-role 'Sales User'"
+			f"bench --site {{site}} add-user {email} --first-name test --last-name test --password 123 --user-type 'System User' --add-role 'Accounts User' --add-role 'Sales User'"
 		)
 		self.assertEqual(self.returncode, 0)
-		user = frappe.get_doc("User", "test@gmail.com")
+		user = frappe.get_doc("User", email)
 		roles = {r.role for r in user.roles}
 		self.assertEqual({"Accounts User", "Sales User"}, roles)
 

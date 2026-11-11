@@ -9,21 +9,14 @@ import frappe
 from frappe.core.doctype.prepared_report.prepared_report import delete_prepared_reports
 from frappe.desk.query_report import generate_report_result, get_prepared_report_result, get_report_doc
 from frappe.tests import IntegrationTestCase, timeout
+from frappe.tests.utils import cleanup_committed_test_data, wait_for_job
 from frappe.tests.utils.test_capabilities import TestService, requires_test_service
 
 
 @requires_test_service(TestService.BACKGROUND_WORKER)
 class TestPreparedReport(IntegrationTestCase):
-	@classmethod
-	def tearDownClass(cls):
-		for r in frappe.get_all("Prepared Report", pluck="name"):
-			frappe.delete_doc("Prepared Report", r, force=True, delete_permanently=True)
-
-		frappe.db.commit()
-
 	@timeout(seconds=20)
 	def wait_for_status(self, report, status):
-		frappe.db.commit()  # Flush changes first
 		while True:
 			frappe.db.rollback()  # read new data
 			report.reload()
@@ -40,9 +33,18 @@ class TestPreparedReport(IntegrationTestCase):
 		).insert()
 
 		if commit:
-			frappe.db.commit()
+			self.addCleanup(self.delete_published_report, doc.name)
+			frappe.db.commit()  # nosemgrep
 
 		return doc
+
+	def delete_published_report(self, name):
+		frappe.db.rollback()
+		if job_id := frappe.db.get_value("Prepared Report", name, "job_id"):
+			wait_for_job(job_id, wait_timeout=20)
+		cleanup_committed_test_data(
+			frappe.delete_doc_if_exists, "Prepared Report", name, force=True, delete_permanently=True
+		)
 
 	def test_queueing(self):
 		doc = self.create_prepared_report()
@@ -51,7 +53,6 @@ class TestPreparedReport(IntegrationTestCase):
 
 		self.wait_for_status(doc, "Completed")
 
-		doc = frappe.get_last_doc("Prepared Report")
 		self.assertTrue(doc.job_id)
 		self.assertTrue(doc.report_end_time)
 
