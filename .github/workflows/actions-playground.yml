@@ -1,0 +1,21 @@
+name: Actions Playground
+
+on:
+  push:
+    branches: [test/actions-playground]
+  workflow_dispatch:
+  pull_request: 
+
+permissions:
+  contents: read
+
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show trigger details
+        run: |
+          echo "Hello from GitHub Actions!"
+          echo "Event: $GITHUB_EVENT_NAME"
+          echo "Branch: $GITHUB_REF_NAME"
+          echo "Commit: $GITHUB_SHA"
