@@ -17,6 +17,7 @@ from frappe.database.utils import FallBackDateTimeStr, convert_backtick_identifi
 from frappe.query_builder import Field
 from frappe.query_builder.functions import Concat_ws
 from frappe.tests import IntegrationTestCase, UnitTestCase, timeout
+from frappe.tests.utils import cleanup_committed_test_data
 from frappe.tests.test_query_builder import db_type_is, run_only_if, unimplemented_for
 from frappe.utils import add_days, now, random_string, set_request
 from frappe.utils.data import now_datetime
@@ -1262,18 +1263,6 @@ class TestDB(IntegrationTestCase):
 		self.assertEqual(statuses, [TransactionStatus.IDLE])
 
 	@run_only_if(db_type_is.POSTGRES)
-	def test_transactions_after_commit_use_the_session_isolation(self):
-		from frappe.automation_engine.tests.test_drainer import connect_again
-
-		other = connect_again()
-		self.addCleanup(other.close)
-		other.commit()
-		self.assertEqual(other.sql("show transaction_isolation")[0][0], "repeatable read")
-		other.sql("SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL READ COMMITTED")
-		other.commit()
-		self.assertEqual(other.sql("show transaction_isolation")[0][0], "read committed")
-
-	@run_only_if(db_type_is.POSTGRES)
 	def test_server_bound_parameters_postgres_cannot_type(self):
 		from frappe.query_builder.functions import Concat
 
@@ -1318,53 +1307,6 @@ class TestDB(IntegrationTestCase):
 		self.assertFalse(frappe.db.sql("select name from tabDocType where name in %s", ((),)))
 		frappe.db.sql("set local statement_timeout = %s", 1234)
 		self.assertEqual(frappe.db.sql("show statement_timeout")[0][0], "1234ms")
-
-	def test_callbacks(self):
-		order_of_execution = []
-
-		def f(val):
-			nonlocal order_of_execution
-			order_of_execution.append(val)
-
-		frappe.db.before_commit.add(lambda: f(0))
-		frappe.db.before_commit.add(lambda: f(1))
-
-		frappe.db.after_commit.add(lambda: f(2))
-		frappe.db.after_commit.add(lambda: f(3))
-
-		frappe.db.before_rollback.add(lambda: f("IGNORED"))
-		frappe.db.before_rollback.add(lambda: f("IGNORED"))
-
-		frappe.db.commit()
-
-		frappe.db.after_commit.add(lambda: f("IGNORED"))
-		frappe.db.after_commit.add(lambda: f("IGNORED"))
-
-		frappe.db.before_rollback.add(lambda: f(4))
-		frappe.db.before_rollback.add(lambda: f(5))
-		frappe.db.after_rollback.add(lambda: f(6))
-		frappe.db.after_rollback.add(lambda: f(7))
-		frappe.db.after_rollback(lambda: f(8))
-
-		frappe.db.rollback()
-
-		self.assertEqual(order_of_execution, list(range(0, 9)))
-
-	def test_failing_after_commit_callback(self):
-		executed = []
-
-		def fail():
-			raise ValueError("Outgoing mail server is unreachable")
-
-		frappe.db.after_commit.add(fail)
-		frappe.db.after_commit.add(lambda: executed.append("cache cleared"))
-
-		with patch("frappe.log_error") as log_error:
-			frappe.db.commit()
-
-		self.assertEqual(executed, ["cache cleared"])
-		log_error.assert_called_once()
-		self.assertEqual(len(frappe.db.after_commit), 0)
 
 	def test_failing_after_rollback_callback(self):
 		executed = []
@@ -1432,6 +1374,55 @@ class TestDB(IntegrationTestCase):
 				self.assertEqual(db.sql("select 1")[0][0], 1)
 			finally:
 				db.close()
+
+
+class TestCommitCallbacks(IntegrationTestCase):
+	def test_callbacks(self):
+		order_of_execution = []
+
+		def f(val):
+			nonlocal order_of_execution
+			order_of_execution.append(val)
+
+		frappe.db.before_commit.add(lambda: f(0))
+		frappe.db.before_commit.add(lambda: f(1))
+
+		frappe.db.after_commit.add(lambda: f(2))
+		frappe.db.after_commit.add(lambda: f(3))
+
+		frappe.db.before_rollback.add(lambda: f("IGNORED"))
+		frappe.db.before_rollback.add(lambda: f("IGNORED"))
+
+		frappe.db.commit()
+
+		frappe.db.after_commit.add(lambda: f("IGNORED"))
+		frappe.db.after_commit.add(lambda: f("IGNORED"))
+
+		frappe.db.before_rollback.add(lambda: f(4))
+		frappe.db.before_rollback.add(lambda: f(5))
+		frappe.db.after_rollback.add(lambda: f(6))
+		frappe.db.after_rollback.add(lambda: f(7))
+		frappe.db.after_rollback(lambda: f(8))
+
+		frappe.db.rollback()
+
+		self.assertEqual(order_of_execution, list(range(0, 9)))
+
+	def test_failing_after_commit_callback(self):
+		executed = []
+
+		def fail():
+			raise ValueError("Outgoing mail server is unreachable")
+
+		frappe.db.after_commit.add(fail)
+		frappe.db.after_commit.add(lambda: executed.append("cache cleared"))
+
+		with patch("frappe.log_error") as log_error:
+			frappe.db.commit()
+
+		self.assertEqual(executed, ["cache cleared"])
+		log_error.assert_called_once()
+		self.assertEqual(len(frappe.db.after_commit), 0)
 
 
 @run_only_if(db_type_is.MARIADB)
@@ -2544,6 +2535,17 @@ class TestTransactionManagement(IntegrationTestCase):
 		frappe.db.rollback()
 		self.assertEqual(advisory_count(), before)
 
+	def test_transactions_after_commit_use_the_session_isolation(self):
+		from frappe.automation_engine.tests.test_drainer import connect_again
+
+		other = connect_again()
+		self.addCleanup(other.close)
+		other.commit()
+		self.assertEqual(other.sql("show transaction_isolation")[0][0], "repeatable read")
+		other.sql("SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL READ COMMITTED")
+		other.commit()
+		self.assertEqual(other.sql("show transaction_isolation")[0][0], "read committed")
+
 
 class TestReadOnlyTransaction(IntegrationTestCase):
 	def setUp(self):
@@ -2654,7 +2656,8 @@ class TestConcurrency(IntegrationTestCase):
 		note = frappe.new_doc("Note")
 		note.title = note.content = frappe.generate_hash()
 		note.insert()
-		frappe.db.commit()  # ensure that second connection can see the document
+		self.addCleanup(cleanup_committed_test_data, frappe.delete_doc_if_exists, note.doctype, note.name)
+		frappe.db.commit()  # nosemgrep
 
 		with self.primary_connection():
 			n1 = frappe.get_doc(note.doctype, note.name)
@@ -2666,7 +2669,8 @@ class TestConcurrency(IntegrationTestCase):
 	@run_only_if(db_type_is.SQLITE)
 	def test_stale_sqlite_snapshot_cannot_overwrite_a_newer_value(self):
 		note = frappe.get_doc(doctype="Note", title=frappe.generate_hash(), content="original").insert()
-		frappe.db.commit()
+		self.addCleanup(cleanup_committed_test_data, frappe.delete_doc_if_exists, note.doctype, note.name)
+		frappe.db.commit()  # nosemgrep
 
 		with self.primary_connection():
 			stale_note = frappe.get_doc(note.doctype, note.name)
@@ -2690,7 +2694,8 @@ class TestConcurrency(IntegrationTestCase):
 		note = frappe.new_doc("Note")
 		note.title = note.content = frappe.generate_hash()
 		note.insert()
-		frappe.db.commit()  # ensure that second connection can see the document
+		self.addCleanup(cleanup_committed_test_data, frappe.delete_doc_if_exists, note.doctype, note.name)
+		frappe.db.commit()  # nosemgrep
 		original_title = note.title
 		new_title = frappe.generate_hash()
 
