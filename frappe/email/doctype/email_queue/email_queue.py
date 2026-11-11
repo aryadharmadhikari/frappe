@@ -151,7 +151,7 @@ class EmailQueue(Document):
 		message.clear_content()
 		message.set_content(REDACTED_MESSAGE)
 
-		self.update_db(message=message.as_string(), commit=True)
+		self.update_db(message=message.as_string(), commit=not frappe.in_test)
 
 	@property
 	def cc(self):
@@ -322,6 +322,7 @@ class SendMailContext:
 		self.queue_doc: EmailQueue = queue_doc
 		self.smtp_server: SMTPServer = smtp_server_instance
 		self.frappe_mail_client: FrappeMail = frappe_mail_client
+		self.commit_status = not frappe.in_test
 		self.sent_to_atleast_one_recipient = any(
 			rec.recipient for rec in self.queue_doc.recipients if rec.is_mail_sent()
 		)
@@ -337,7 +338,7 @@ class SendMailContext:
 			self.smtp_server = self.email_account_doc.get_smtp_server()
 
 	def __enter__(self):
-		self.queue_doc.update_status(status="Sending", commit=True)
+		self.queue_doc.update_status(status="Sending", commit=self.commit_status)
 		return self
 
 	def __exit__(self, exc_type, exc_val, exc_tb):
@@ -356,7 +357,7 @@ class SendMailContext:
 		else:
 			update_fields = {"status": "Sent"}
 
-		self.queue_doc.update_status(**update_fields, commit=True)
+		self.queue_doc.update_status(**update_fields, commit=self.commit_status)
 
 		if not exc_type and self.queue_doc.redact_message_after_send:
 			try:
@@ -385,7 +386,7 @@ class SendMailContext:
 
 	def update_recipient_status_to_sent(self, recipient):
 		self.sent_to_atleast_one_recipient = True
-		recipient.update_db(status="Sent", commit=True)
+		recipient.update_db(status="Sent", commit=self.commit_status)
 
 	def get_message_object(self, message):
 		policy = SMTP.clone(refold_source="none")
@@ -928,7 +929,8 @@ class QueueBuilder:
 			).name
 			for r in final_recipients
 		]
-		frappe.db.commit()  # nosemgrep
+		if not frappe.in_test:
+			frappe.db.commit()  # nosemgrep
 
 		frappe_mail_client = None
 		smtp_server_instance = None
