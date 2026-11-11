@@ -21,9 +21,6 @@ from frappe.tests.utils import cleanup_committed_test_data, whitelist_for_tests
 from frappe.tests.utils.test_capabilities import TestService, requires_test_service
 from frappe.utils import cint, get_test_client, get_url
 
-authorization_token = None
-
-
 @contextmanager
 def suppress_stdout():
 	"""Supress stdout for tests which expectedly make noise
@@ -53,10 +50,6 @@ def make_request(
 	return t._return
 
 
-def patch_request_header(key, *args, **kwargs):
-	if key == "Authorization":
-		return f"token {authorization_token}"
-
 
 class ThreadWithReturnValue(Thread):
 	def __init__(self, group=None, target=None, name=None, args=(), kwargs=None, *, site=None):
@@ -69,22 +62,12 @@ class ThreadWithReturnValue(Thread):
 	def run(self):
 		if self._target is not None:
 			with patch("frappe.app.get_site_name", return_value=self.site):
-				header_patch = patch("frappe.get_request_header", new=patch_request_header)
-				if authorization_token:
-					header_patch.start()
+				response = self._target(*self._args, **self._kwargs)
 				try:
-					response = self._target(*self._args, **self._kwargs)
-					try:
-						# Materialize the body before closing the WSGI iterator. Closing it
-						# runs Frappe's after-response callbacks and destroys this thread's
-						# database connection instead of leaking a SQLite transaction.
-						response.get_data()
-					finally:
-						response.close()
-					self._return = response
+					response.get_data()
 				finally:
-					if authorization_token:
-						header_patch.stop()
+					response.close()
+				self._return = response
 
 	def join(self, *args):
 		Thread.join(self, *args)
@@ -132,6 +115,16 @@ class FrappeAPITestCase(IntegrationTestCase):
 			frappe.local.login_manager = LoginManager()
 			frappe.local.login_manager.login_as("Administrator")
 			return frappe.session.sid
+
+	def create_published_api_user(self):
+		from frappe.core.doctype.user.user import generate_keys
+
+		email = f"api-auth-{frappe.generate_hash(length=8)}@example.com"
+		self.addCleanup(cleanup_committed_test_data, frappe.delete_doc_if_exists, "User", email)
+		frappe.get_doc(doctype="User", email=email, first_name="API Auth", send_welcome_email=0).insert()
+		keys = generate_keys(email)
+		frappe.db.commit()  # nosemgrep
+		return email, keys["api_key"], keys["api_secret"]
 
 	def get(self, path: str, params: dict | None = None, **kwargs) -> TestResponse:
 		return make_request(target=self.TEST_CLIENT.get, args=(path,), kwargs={"json": params, **kwargs})
@@ -564,26 +557,16 @@ class TestMethodAPI(FrappeAPITestCase):
 		self.assertEqual(message, {})
 
 	def test_auth_cycle_v1(self):
-		# test 4: Pass authorization token in request
-		global authorization_token
-		generate_admin_keys()
-		user = frappe.get_doc("User", "Administrator")
-		api_key, api_secret = user.api_key, user.get_password("api_secret")
-		authorization_token = f"{api_key}:{api_secret}"
-		response = self.get(self.method("frappe.auth.get_logged_user"))
-
+		user, api_key, api_secret = self.create_published_api_user()
+		path = self.method("frappe.auth.get_logged_user")
+		response = self.get(path, headers={"Authorization": f"token {api_key}:{api_secret}"})
 		self.assertEqual(response.status_code, 200)
-		self.assertEqual(response.json["message"], "Administrator")
+		self.assertEqual(response.json["message"], user)
 
-		authorization_token = f"{api_key}:INCORRECT"
-		response = self.get(self.method("frappe.auth.get_logged_user"))
-		self.assertEqual(response.status_code, 401)
-
-		authorization_token = "NonExistentKey:INCORRECT"
-		response = self.get(self.method("frappe.auth.get_logged_user"))
-		self.assertEqual(response.status_code, 401)
-
-		authorization_token = None
+		for invalid_token in (f"{api_key}:INCORRECT", "NonExistentKey:INCORRECT"):
+			with self.subTest(token=invalid_token):
+				response = self.get(path, headers={"Authorization": f"token {invalid_token}"})
+				self.assertEqual(response.status_code, 401)
 
 	def test_404s_v1(self):
 		response = self.get(self.get_path("rest"), {"sid": self.sid})
@@ -898,13 +881,6 @@ class TestAPIResponse(FrappeAPITestCase):
 			response = self.get(f"/login?{urlencode({'redirect-to': redirect})}", {"sid": self.sid})
 			self.assertEqual(response.location, expected_redirect)
 
-
-def generate_admin_keys():
-	from frappe.core.doctype.user.user import generate_keys
-
-	generate_keys("Administrator")
-	# API requests authenticate on another connection and need these credentials.
-	frappe.db.commit()  # nosemgrep
 
 
 @whitelist_for_tests()

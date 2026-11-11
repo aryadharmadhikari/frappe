@@ -17,9 +17,6 @@ from frappe.tests.utils import toggle_test_mode, wait_for_job, whitelist_for_tes
 from frappe.tests.utils.test_capabilities import TestService, requires_test_service
 from frappe.utils import get_test_client, set_request
 
-authorization_token = None
-
-
 resource_key = {
 	"": "resource",
 	"v1": "resource",
@@ -496,18 +493,14 @@ class TestMethodAPIV2(FrappeAPITestCase):
 		self.assertEqual(response.json.get("data"), {})
 
 	def test_auth_cycle_v2(self):
-		global authorization_token
-
-		generate_admin_keys()
-		user = frappe.get_doc("User", "Administrator")
-		api_key, api_secret = user.api_key, user.get_password("api_secret")
-		authorization_token = f"{api_key}:{api_secret}"
-		response = self.get(self.method("frappe.auth.get_logged_user"))
-
+		user, api_key, api_secret = self.create_published_api_user()
+		response = make_request(
+			get_test_client(use_cookies=False).get,
+			args=(self.method("frappe.auth.get_logged_user"),),
+			kwargs={"headers": {"Authorization": f"token {api_key}:{api_secret}"}},
+		)
 		self.assertEqual(response.status_code, 200)
-		self.assertEqual(response.json["data"], "Administrator")
-
-		authorization_token = None
+		self.assertEqual(response.json["data"], user)
 
 	def test_404s_v2(self):
 		response = self.get(self.get_path("rest"), {"sid": self.sid})
@@ -1292,12 +1285,6 @@ class TestReadOnlyMode(FrappeAPITestCase):
 		self.assertEqual(response.status_code, 503)
 		self.assertEqual(response.json["errors"][0]["type"], "InReadOnlyMode")
 
-
-def generate_admin_keys():
-	from frappe.core.doctype.user.user import generate_keys
-
-	generate_keys("Administrator")
-	frappe.db.commit()  # nosemgrep
 
 
 @whitelist_for_tests()
