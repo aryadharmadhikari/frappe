@@ -32,6 +32,7 @@ from frappe.desk.notifications import extract_mentions
 from frappe.frappeclient import FrappeClient
 from frappe.model.delete_doc import delete_doc
 from frappe.tests import IntegrationTestCase
+from frappe.tests.baseline import SYSTEM_MANAGER
 from frappe.tests.classes.context_managers import change_settings
 from frappe.tests.test_api import FrappeAPITestCase
 from frappe.tests.test_query_builder import db_type_is, unimplemented_for
@@ -814,13 +815,13 @@ class TestUser(IntegrationTestCase):
 				ignore_if_duplicate=True
 			)
 
-		with test_user(roles=["System Manager"]) as admin, test_user(roles=["_Test Role 2"]) as user:
+		with test_user(roles=["_Test Role 2"]) as user:
 			user.append("block_modules", {"module": "_Test Gone Module"})
 			user.save()
 			frappe.delete_doc("Module Def", "_Test Gone Module", force=True)
 			self.assertFalse(frappe.db.exists("Module Def", "_Test Gone Module"))
 
-			with self.set_user(admin.name):
+			with self.set_user(SYSTEM_MANAGER):
 				frappe.response.docs = []
 				getdoc("User", user.name)
 				all_modules = frappe.response.docs[0].get("__onload").get("all_modules")

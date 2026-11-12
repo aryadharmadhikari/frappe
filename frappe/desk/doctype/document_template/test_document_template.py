@@ -144,8 +144,8 @@ class TestDocumentTemplate(IntegrationTestCase):
 			self._make_template("dup-public")
 
 	def test_duplicate_public_template_blocked_across_different_owners(self):
-		with test_user(roles=["System Manager"]) as user_a, test_user(roles=["System Manager"]) as user_b:
-			self._make_template("shared-public", owner=user_a.name)
+		with test_user(roles=["System Manager"]) as user_b:
+			self._make_template("shared-public", owner=SYSTEM_MANAGER)
 			with self.assertRaises(frappe.ValidationError):
 				self._make_template("shared-public", owner=user_b.name)
 
@@ -155,8 +155,8 @@ class TestDocumentTemplate(IntegrationTestCase):
 			self._make_template("priv", private=1, owner=SYSTEM_MANAGER)
 
 	def test_duplicate_private_different_owners_allowed(self):
-		with test_user(roles=["System Manager"]) as u1, test_user(roles=["System Manager"]) as u2:
-			self._make_template("priv-shared", private=1, owner=u1.name)
+		with test_user(roles=["System Manager"]) as u2:
+			self._make_template("priv-shared", private=1, owner=SYSTEM_MANAGER)
 			self._make_template("priv-shared", private=1, owner=u2.name)
 
 	def test_user_can_have_public_and_private_with_same_name(self):
@@ -185,9 +185,8 @@ class TestDocumentTemplate(IntegrationTestCase):
 			t.save(ignore_permissions=True)
 
 	def test_owner_can_make_template_public(self):
-		with test_user(roles=["System Manager"]) as owner_user:
-			t = self._make_template("self-convert", private=1, owner=owner_user.name)
-			frappe.set_user(owner_user.name)
+		t = self._make_template("self-convert", private=1, owner=SYSTEM_MANAGER)
+		with self.set_user(SYSTEM_MANAGER):
 			t.reload()
 			t.private = 0
 			t.save(ignore_permissions=True)
@@ -215,12 +214,12 @@ class TestDocumentTemplate(IntegrationTestCase):
 				get_templates(reference_doctype=REF_DOCTYPE)
 
 	def test_get_templates_returns_public_and_own_private_only(self):
-		with test_user(roles=["Desk User"]) as user_a, test_user(roles=["Desk User"]) as user_b:
+		with test_user(roles=["Desk User"]) as user_b:
 			self._make_template("public", private=0)
-			self._make_template("a-private", private=1, owner=user_a.name)
+			self._make_template("a-private", private=1, owner=DESK_USER)
 			self._make_template("b-private", private=1, owner=user_b.name)
 
-			with self.set_user(user_a.name):
+			with self.set_user(DESK_USER):
 				result = get_templates(reference_doctype=REF_DOCTYPE)
 
 		names = [t.template_name for t in result["templates"]]
@@ -229,10 +228,10 @@ class TestDocumentTemplate(IntegrationTestCase):
 		self.assertNotIn("_Test b-private", names)
 
 	def test_get_templates_disabled_visible_only_to_owner(self):
-		with test_user(roles=["Desk User"]) as owner_user, test_user(roles=["Desk User"]) as other:
-			self._make_template("dis-public", private=0, disabled=1, owner=owner_user.name)
+		with test_user(roles=["Desk User"]) as other:
+			self._make_template("dis-public", private=0, disabled=1, owner=DESK_USER)
 
-			with self.set_user(owner_user.name):
+			with self.set_user(DESK_USER):
 				owner_view = [
 					t.template_name for t in get_templates(reference_doctype=REF_DOCTYPE)["templates"]
 				]
@@ -324,15 +323,11 @@ class TestDocumentTemplate(IntegrationTestCase):
 
 	def test_get_templates_system_manager_sees_all_public_and_own_private_only(self):
 		"""System Manager sees all public and own private template in the list view."""
-		with (
-			test_user(roles=["Desk User"]) as owner_user,
-			test_user(roles=["System Manager"]) as sm,
-		):
-			pub = self._make_template("sm-public", private=0, owner=owner_user.name)
-			priv = self._make_template("sm-private", private=1, owner=owner_user.name)
+		pub = self._make_template("sm-public", private=0, owner=DESK_USER)
+		priv = self._make_template("sm-private", private=1, owner=DESK_USER)
 
-			with self.set_user(sm.name):
-				names = [t.template_name for t in get_templates(reference_doctype=REF_DOCTYPE)["templates"]]
+		with self.set_user(SYSTEM_MANAGER):
+			names = [t.template_name for t in get_templates(reference_doctype=REF_DOCTYPE)["templates"]]
 
 		self.assertIn(pub.template_name, names)
 		self.assertNotIn(priv.template_name, names)
@@ -340,13 +335,10 @@ class TestDocumentTemplate(IntegrationTestCase):
 	def test_get_templates_template_manager_sees_public_and_own_private_only(self):
 		"""Template Manager sees public templates and their own private ones,
 		but not private templates owned by others."""
-		with (
-			self.template_manager() as manager,
-			test_user(roles=["System Manager"]) as other,
-		):
-			pub = self._make_template("tm-pub", private=0, owner=other.name)
+		with self.template_manager() as manager:
+			pub = self._make_template("tm-pub", private=0, owner=SYSTEM_MANAGER)
 			own_priv = self._make_template("tm-own-priv", private=1, owner=manager.name)
-			other_priv = self._make_template("tm-other-priv", private=1, owner=other.name)
+			other_priv = self._make_template("tm-other-priv", private=1, owner=SYSTEM_MANAGER)
 
 			with self.set_user(manager.name):
 				names = [t.template_name for t in get_templates(reference_doctype=REF_DOCTYPE)["templates"]]
@@ -451,13 +443,10 @@ class TestDocumentTemplate(IntegrationTestCase):
 		self.assertIn(t.name, names)
 
 	def test_list_view_for_template_manager_excludes_others_private(self):
-		with (
-			self.template_manager() as manager,
-			test_user(roles=["System Manager"]) as other,
-		):
+		with self.template_manager() as manager:
 			pub = self._make_template("tm-pub", private=0)
 			own_priv = self._make_template("tm-own-priv", private=1, owner=manager.name)
-			other_priv = self._make_template("tm-other-priv", private=1, owner=other.name)
+			other_priv = self._make_template("tm-other-priv", private=1, owner=SYSTEM_MANAGER)
 
 			with self.set_user(manager.name):
 				names = {
@@ -499,39 +488,35 @@ class TestDocumentTemplate(IntegrationTestCase):
 				self.assertTrue(has_permission(t, user=DESK_USER, ptype=ptype))
 
 	def test_has_permission_other_user_cannot_access_private(self):
-		with test_user(roles=["Desk User"]) as owner_user, test_user(roles=["Desk User"]) as other:
-			t = self._make_template("perm-priv", private=1, owner=owner_user.name)
+		with test_user(roles=["Desk User"]) as other:
+			t = self._make_template("perm-priv", private=1, owner=DESK_USER)
 			self.assertFalse(has_permission(t, user=other.name, ptype="read"))
 			self.assertFalse(has_permission(t, user=other.name, ptype="write"))
 
 	def test_has_permission_system_manager_can_access_others_private(self):
-		with test_user(roles=["Desk User"]) as owner_user, test_user(roles=["System Manager"]) as sm:
-			t = self._make_template("perm-priv-sm", private=1, owner=owner_user.name)
-			self.assertTrue(has_permission(t, user=sm.name, ptype="read"))
-			self.assertTrue(has_permission(t, user=sm.name, ptype="write"))
+		t = self._make_template("perm-priv-sm", private=1, owner=DESK_USER)
+		self.assertTrue(has_permission(t, user=SYSTEM_MANAGER, ptype="read"))
+		self.assertTrue(has_permission(t, user=SYSTEM_MANAGER, ptype="write"))
 
 	def test_has_permission_template_manager_cannot_access_others_private(self):
 		"""Even Template Manager (write w/o owner) cannot see private templates of others."""
-		with (
-			test_user(roles=["Desk User"]) as owner_user,
-			self.template_manager() as manager,
-		):
-			t = self._make_template("perm-priv-tm", private=1, owner=owner_user.name)
+		with self.template_manager() as manager:
+			t = self._make_template("perm-priv-tm", private=1, owner=DESK_USER)
 			self.assertFalse(has_permission(t, user=manager.name, ptype="read"))
 			self.assertFalse(has_permission(t, user=manager.name, ptype="delete"))
 
 	def test_has_permission_other_user_can_read_public(self):
-		with test_user(roles=["Desk User"]) as owner_user, test_user(roles=["Desk User"]) as other:
-			t = self._make_template("perm-pub", private=0, owner=owner_user.name)
+		with test_user(roles=["Desk User"]) as other:
+			t = self._make_template("perm-pub", private=0, owner=DESK_USER)
 			self.assertTrue(has_permission(t, user=other.name, ptype="read"))
 
 	def test_has_permission_blocks_when_user_permission_denies_payload(self):
 		"""User-permission restrictions on payload data deny access for non-owners."""
-		with test_user(roles=["Desk User"]) as owner_user, test_user(roles=["Desk User"]) as other:
+		with test_user(roles=["Desk User"]) as other:
 			t = self._make_template(
 				"perm-userperm",
 				private=0,
-				owner=owner_user.name,
+				owner=DESK_USER,
 				data=_make_data(description="x", role="System Manager"),
 			)
 			add_user_permission("Role", "Desk User", other.name, ignore_permissions=True)
