@@ -369,12 +369,11 @@ class TestDrainer(IntegrationTestCase):
 			commits.append(1)
 			return original_commit(*args, **kwargs)
 
-		frappe.db.commit = counting_commit
-		try:
-			with self.change_settings("Automation Settings", commit_every=2):
-				drainer.execute_batch(lambda name: None, claimed)
-		finally:
-			frappe.db.commit = original_commit
+		with (
+			self.change_settings("Automation Settings", commit=True, commit_every=2),
+			patch.object(frappe.db, "commit", counting_commit),
+		):
+			drainer.execute_batch(lambda name: None, claimed)
 
 		# Four rows at two per group is two commits, not four.
 		self.assertEqual(len(commits), 2)
