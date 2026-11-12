@@ -735,11 +735,13 @@ class TestLinkedWith(IntegrationTestCase):
 	def test_bounded_static_lookup_counts_the_rows_it_drops(self):
 		"""Rows the lookup drops after the query still count towards its limit,
 		or they could hide blockers beyond it."""
-		new_doctype(
-			"Self Linked DocType",
-			fields=[{"fieldname": "previous", "fieldtype": "Link", "options": "Self Linked DocType"}],
-		).insert()
-		self.addCleanup(frappe.delete_doc, "DocType", "Self Linked DocType")
+		insert_test_doctype(
+			self,
+			new_doctype(
+				"Self Linked DocType",
+				fields=[{"fieldname": "previous", "fieldtype": "Link", "options": "Self Linked DocType"}],
+			),
+		)
 		doc = frappe.get_doc({"doctype": "Self Linked DocType"}).insert()
 		# a self link, which the lookup drops
 		doc.previous = doc.name
@@ -937,33 +939,32 @@ class TestLinkedWith(IntegrationTestCase):
 
 	def test_get_finds_dynamic_links_added_after_first_lookup(self):
 		# a new doctype, so no earlier Child DocType1 row links to it
-		target_doctype = new_doctype().insert().name
-		try:
-			target = frappe.new_doc(target_doctype).insert()
-			self.assertNotIn("Child DocType1", linked_with.get(target_doctype, target.name))
+		target_doctype = insert_test_doctype(self, new_doctype()).name
+		target = frappe.new_doc(target_doctype).insert()
+		self.assertNotIn("Child DocType1", linked_with.get(target_doctype, target.name))
 
-			child_record = frappe.get_doc(
-				{
-					"doctype": "Child DocType1",
-					"reference_doctype": target_doctype,
-					"reference_name": target.name,
-				}
-			).insert()
+		child_record = frappe.get_doc(
+			{
+				"doctype": "Child DocType1",
+				"reference_doctype": target_doctype,
+				"reference_name": target.name,
+			}
+		).insert()
 
-			linked_docs = linked_with.get(target_doctype, target.name)["Child DocType1"]["docs"]
-			self.assertEqual([doc.name for doc in linked_docs], [child_record.name])
-		finally:
-			frappe.delete_doc("DocType", target_doctype)
+		linked_docs = linked_with.get(target_doctype, target.name)["Child DocType1"]["docs"]
+		self.assertEqual([doc.name for doc in linked_docs], [child_record.name])
 
 	def test_same_request_lookup_finds_a_new_dynamic_link(self):
 		# new doctypes, so no earlier row links the target
 		all_can_edit = [{"role": "All", "read": 1, "write": 1, "create": 1}]
-		target_doctype = new_doctype(permissions=all_can_edit).insert().name
+		target_doctype = insert_test_doctype(self, new_doctype(permissions=all_can_edit)).name
 		link_fields = [
 			{"fieldname": "reference_doctype", "fieldtype": "Link", "options": "DocType"},
 			{"fieldname": "reference_name", "fieldtype": "Dynamic Link", "options": "reference_doctype"},
 		]
-		linking_doctype = new_doctype(fields=link_fields, permissions=all_can_edit).insert().name
+		linking_doctype = insert_test_doctype(
+			self, new_doctype(fields=link_fields, permissions=all_can_edit)
+		).name
 		try:
 			# outside tests the dynamic link map is built once per request
 			with self.set_user("test@example.com"), patch.object(frappe, "in_test", False):
@@ -983,8 +984,6 @@ class TestLinkedWith(IntegrationTestCase):
 				self.assertEqual([doc.name for doc in linked_docs], [link.name])
 		finally:
 			frappe.local.dynamic_link_map = None
-			frappe.delete_doc("DocType", linking_doctype)
-			frappe.delete_doc("DocType", target_doctype)
 
 	def test_check_delete_integrity(self):
 		"""Don't allow deleting cancelled document if amendment exists"""
@@ -1086,22 +1085,25 @@ class TestLinkedWith(IntegrationTestCase):
 
 	def test_reserved_keywords(self):
 		dt_name = "Test " + "".join(random.sample(string.ascii_lowercase, 10))
-		new_doctype(
-			dt_name,
-			fields=[
-				{
-					"fieldname": "from",
-					"fieldtype": "Link",
-					"options": "DocType",
-				},
-				{
-					"fieldname": "order",
-					"fieldtype": "Dynamic Link",
-					"options": "from",
-				},
-			],
-			is_submittable=True,
-		).insert()
+		insert_test_doctype(
+			self,
+			new_doctype(
+				dt_name,
+				fields=[
+					{
+						"fieldname": "from",
+						"fieldtype": "Link",
+						"options": "DocType",
+					},
+					{
+						"fieldname": "order",
+						"fieldtype": "Dynamic Link",
+						"options": "from",
+					},
+				],
+				is_submittable=True,
+			),
+		)
 
 		linked_doc = frappe.new_doc(dt_name).insert().submit()
 
