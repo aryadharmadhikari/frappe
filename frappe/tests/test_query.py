@@ -3212,7 +3212,6 @@ class TestQuery(IntegrationTestCase):
 	@run_only_if(db_type_is.MARIADB)
 	def test_drop_unique_constraint_for_deleted_fields_mariadb(self):
 		trial_dt = new_doctype(
-			"Trial Doctype",
 			fields=[
 				{
 					"fieldname": "field_one",
@@ -3228,9 +3227,9 @@ class TestQuery(IntegrationTestCase):
 			],
 		)
 
-		trial_dt.insert(ignore_if_duplicate=True)
+		insert_test_doctype(self, trial_dt)
 
-		indexes = frappe.db.get_column_index("tabTrial Doctype", "field_two", unique=True)
+		indexes = frappe.db.get_column_index(f"tab{trial_dt.name}", "field_two", unique=True)
 		self.assertTrue(indexes)
 
 		field_to_remove = None
@@ -3243,14 +3242,16 @@ class TestQuery(IntegrationTestCase):
 		trial_dt.fields.remove(field_to_remove)
 		trial_dt.save()
 
-		indexes = frappe.db.get_column_index("tabTrial Doctype", "field_two", unique=True)
+		indexes = frappe.db.get_column_index(f"tab{trial_dt.name}", "field_two", unique=True)
 		self.assertFalse(indexes)
 
 	@run_only_if(db_type_is.POSTGRES)
 	def test_drop_unique_constraint_and_indexes_for_deleted_fields_postgres(self):
+		from frappe.core.doctype.doctype.test_doctype import _transactional_postgres_schema
+
+		self.enterContext(_transactional_postgres_schema())
 		# test for unique index backed by constraint at field creation time
 		trial_dt = new_doctype(
-			"Trial Doctype",
 			fields=[
 				{
 					"fieldname": "field_one",
@@ -3266,7 +3267,7 @@ class TestQuery(IntegrationTestCase):
 			],
 		)
 
-		trial_dt.insert(ignore_if_duplicate=True)
+		trial_dt.insert()
 
 		index_exists = frappe.db.sql(
 			"""
