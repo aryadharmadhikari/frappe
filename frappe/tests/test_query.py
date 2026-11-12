@@ -1,7 +1,8 @@
 import itertools
 
 import frappe
-from frappe.core.doctype.doctype.test_doctype import new_doctype
+from frappe.core.doctype.doctype.test_doctype import insert_test_doctype, new_doctype
+from frappe.core.doctype.user.test_user import test_user
 from frappe.permissions import add_permission, update_permission_property
 from frappe.query_builder import Field
 from frappe.query_builder.functions import Abs, Cast, Count, Ifnull, Max, Now, Timestamp
@@ -1839,22 +1840,10 @@ class TestQuery(IntegrationTestCase):
 
 	def test_filter_linked_field_permission(self):
 		"""Test that filtering is only allowed on permitted linked fields."""
-		with setup_test_user(set_user=True) as user:
-			target_dt_name = "TargetDocForFilterPerm"
-			source_dt_name = "SourceDocForFilterPerm"
-			test_role = "FilterPermTestRole"
-
-			# Cleanup previous runs
-			frappe.set_user("Administrator")
-			frappe.delete_doc("DocType", target_dt_name, ignore_missing=True, force=True)
-			frappe.delete_doc("DocType", source_dt_name, ignore_missing=True, force=True)
-			frappe.delete_doc("Role", test_role, ignore_missing=True, force=True)
-			test_user_doc = frappe.get_doc("User", user.name)
-			test_user_doc.remove_roles(test_role)
-
-			# Create Doctypes
-			target_dt = new_doctype(
-				target_dt_name,
+		frappe.set_user("Administrator")
+		target_dt = insert_test_doctype(
+			self,
+			new_doctype(
 				fields=[
 					{
 						"fieldname": "target_field",
@@ -1864,44 +1853,28 @@ class TestQuery(IntegrationTestCase):
 					},
 					{"fieldname": "other_target_field", "fieldtype": "Data", "label": "Other Target Field"},
 				],
-			).insert(ignore_if_duplicate=True)
+			),
+		)
+		source_dt = insert_test_doctype(
+			self,
+			new_doctype(fields=[{"fieldname": "link_field", "fieldtype": "Link", "options": target_dt.name}]),
+		)
+		target_doc = frappe.get_doc(
+			doctype=target_dt.name, target_field="Secret Data", other_target_field="Public Data"
+		).insert()
+		frappe.get_doc(doctype=source_dt.name, link_field=target_doc.name).insert()
 
-			source_dt = new_doctype(
-				source_dt_name,
-				fields=[
-					{
-						"fieldname": "link_field",
-						"fieldtype": "Link",
-						"options": target_dt_name,
-						"label": "Link Field",
-					}
-				],
-			).insert(ignore_if_duplicate=True)
+		role = frappe.get_doc(doctype="Role", role_name="FilterPermTestRole").insert()
+		add_permission(source_dt.name, role.name, 0, ptype="read")
+		add_permission(target_dt.name, role.name, 0, ptype="read")
+		update_permission_property(target_dt.name, role.name, 1, "read", 0, validate=False)
+		user = self.enterContext(test_user(roles=[role.name]))
 
-			# Create Records
-			target_doc = frappe.get_doc(
-				doctype=target_dt_name, target_field="Secret Data", other_target_field="Public Data"
-			).insert(ignore_permissions=True)
-			source_doc = frappe.get_doc(doctype=source_dt_name, link_field=target_doc.name).insert(
-				ignore_permissions=True
-			)
-
-			# Setup Role and Permissions
-			frappe.get_doc({"doctype": "Role", "role_name": test_role}).insert(ignore_if_duplicate=True)
-			add_permission(source_dt_name, test_role, 0, ptype="read")
-			add_permission(target_dt_name, test_role, 0, ptype="read")
-			update_permission_property(
-				target_dt_name, test_role, 1, "read", 0, validate=False
-			)  # No permlevel 1 read
-			test_user_doc.add_roles(test_role)
-
-			# Test as the restricted user
-			frappe.set_user(user.name)
-
+		with self.set_user(user.name):
 			# Try filtering on permitted linked field (other_target_field - permlevel 0)
 			try:
 				frappe.qb.get_query(
-					source_dt_name,
+					source_dt.name,
 					filters={"link_field.other_target_field": "Public Data"},
 					ignore_permissions=False,
 					user=user.name,
@@ -1912,22 +1885,13 @@ class TestQuery(IntegrationTestCase):
 			# Try filtering on non-permitted linked field (target_field - permlevel 1)
 			with self.assertRaises(frappe.PermissionError) as cm_link:
 				frappe.qb.get_query(
-					source_dt_name,
+					source_dt.name,
 					filters={"link_field.target_field": "Secret Data"},
 					ignore_permissions=False,
 					user=user.name,
 				).run()
 			self.assertIn("You do not have permission to access field", str(cm_link.exception))
-			self.assertIn(f"{target_dt_name}.target_field", str(cm_link.exception))
-
-			# Cleanup
-			frappe.set_user("Administrator")
-			source_doc.delete(ignore_permissions=True)
-			target_doc.delete(ignore_permissions=True)
-			source_dt.delete()
-			target_dt.delete()
-			test_user_doc.remove_roles(test_role)
-			frappe.delete_doc("Role", test_role, force=True)
+			self.assertIn(f"{target_dt.name}.target_field", str(cm_link.exception))
 
 	def test_dynamic_fields_in_group_by(self):
 		"""Test dynamic field support in GROUP BY clause."""
