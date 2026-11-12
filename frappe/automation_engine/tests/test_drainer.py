@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import frappe
 import frappe.automation_engine.drainer as drainer
-from frappe.automation_engine import settings
+from frappe.automation_engine import dispatch, settings
 from frappe.automation_engine.drainer import (
 	claim_batch,
 	drain,
@@ -46,6 +46,8 @@ class TestDrainer(IntegrationTestCase):
 
 	def setUp(self):
 		super().setUp()
+		self.enterContext(patch.object(dispatch, "kick_drainer"))
+		self.enterContext(patch.object(drainer, "kick_drainer"))
 		self.automation = make_automation()
 		self.addCleanup(self.delete_flow_and_queue)
 
@@ -386,7 +388,7 @@ class TestDrainer(IntegrationTestCase):
 		# A budget this small expires during the first batch, so the second is never claimed.
 		with (
 			patch.object(drainer, "kick_drainer") as kick,
-			self.change_settings("Automation Settings", drain_seconds=0.001),
+			self.change_settings("Automation Settings", commit=True, drain_seconds=0.001),
 		):
 			with patch.object(drainer, "time", wraps=drainer.time) as clock:
 				clock.monotonic.side_effect = [100.0, 101.0]
