@@ -300,6 +300,7 @@ class TestAuth(IntegrationTestCase):
 
 		self.set_system_settings("enable_two_factor_auth", 1)
 		self.set_system_settings("two_factor_method", "OTP App")
+		frappe.db.set_value("Role", "All", "two_factor_auth", 1)
 
 		self.set_system_settings("force_user_to_reset_password", 1)
 

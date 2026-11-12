@@ -47,10 +47,6 @@ user_module = frappe.core.doctype.user.user
 
 class TestUser(IntegrationTestCase):
 	def tearDown(self):
-		# disable password strength test
-		frappe.db.set_single_value("System Settings", "enable_password_policy", 0)
-		frappe.db.set_single_value("System Settings", "minimum_password_score", "")
-		frappe.db.set_single_value("System Settings", "password_reset_limit", 3)
 		frappe.set_user("Administrator")
 		super().tearDown()
 
@@ -356,7 +352,7 @@ class TestUser(IntegrationTestCase):
 
 	def test_password_strength(self):
 		# Test Password without Password Strength Policy
-		with change_settings("System Settings", enable_password_policy=0):
+		with change_settings("System Settings", enable_password_policy=0, minimum_password_score=""):
 			# password policy is disabled, test_password_strength should be ignored
 			result = test_password_strength("test_password")
 			self.assertFalse(result.get("feedback", None))
