@@ -882,10 +882,6 @@ class TestImporter(ImporterTestCase):
 		from frappe.core.doctype.data_import.importer import ImportFile
 		from frappe.core.doctype.data_import.value_mapping import get_column_invalid_items
 
-		for gender in ("Male", "Female"):
-			if not frappe.db.exists("Gender", gender):
-				frappe.get_doc({"doctype": "Gender", "gender": gender}).insert()
-
 		csv_content = (
 			"\n"
 			"First Name,Last Name,Status,Salutation,Gender\n"
@@ -908,8 +904,6 @@ class TestImporter(ImporterTestCase):
 
 	def test_link_and_select_warnings_include_row_numbers(self):
 		"""Column warnings for Link/Select list invalid values with 1-based sheet row numbers."""
-		if not frappe.db.exists("Salutation", "Mr"):
-			frappe.get_doc({"doctype": "Salutation", "salutation": "Mr"}).insert()
 		for name in ("Miss", "Ms"):
 			if frappe.db.exists("Salutation", name):
 				frappe.delete_doc("Salutation", name)

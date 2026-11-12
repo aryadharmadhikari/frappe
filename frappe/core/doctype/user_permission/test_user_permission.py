@@ -12,7 +12,6 @@ from frappe.core.doctype.user_permission.user_permission import (
 from frappe.permissions import add_permission, has_user_permission
 from frappe.tests import IntegrationTestCase
 from frappe.tests.test_helpers import setup_for_tests
-from frappe.tests.utils import cleanup_committed_test_data
 
 
 class TestUserPermission(IntegrationTestCase):
@@ -139,14 +138,6 @@ class TestUserPermission(IntegrationTestCase):
 
 
 class TestUserPermissionSchema(IntegrationTestCase):
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		if not frappe.db.exists("Role", "Blogger"):
-			cls.addClassCleanup(cleanup_committed_test_data, frappe.delete_doc_if_exists, "Role", "Blogger")
-			frappe.get_doc(doctype="Role", role_name="Blogger").insert()
-			frappe.db.commit()  # nosemgrep
-
 	def setUp(self):
 		super().setUp()
 		self.enterContext(self.set_user("Administrator"))

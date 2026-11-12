@@ -62,11 +62,7 @@ class TestRoleProfile(IntegrationTestCase):
 		self.assertEqual(role_profile_one.role_profile, "_Test Role Profile 1")
 		self.assertEqual(role_profile_two.role_profile, "_Test Role Profile 2")
 
-		# Create new role for test
 		frappe.get_doc(doctype="Role", role_name="_Test Role 1").insert(ignore_if_duplicate=True)
-		frappe.get_doc(doctype="Role", role_name="_Test Role 2").insert(ignore_if_duplicate=True)
-		frappe.get_doc(doctype="Role", role_name="_Test Role 3").insert(ignore_if_duplicate=True)
-		# add role
 		role_profile_one.update({"roles": [{"role": "_Test Role 1"}, {"role": "_Test Role 2"}]})
 		role_profile_one.save()
 

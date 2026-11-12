@@ -458,9 +458,12 @@ def make_test_baseline(app: str) -> None:
 	manager = test_record_manager_instance
 	original = {doctype: records.copy() for doctype, records in frappe.local.test_objects.items()}
 	manager.pending = []
+	from frappe.tests.baseline import make_master_records
+
 	try:
 		for doctype in doctypes:
 			make_test_records(doctype)
+		make_master_records()
 		if "User" in doctypes:
 			_validate_baseline_users(frappe.local.test_objects["User"])
 		frappe.db.commit()

@@ -833,13 +833,6 @@ class TestPermissions(IntegrationTestCase):
 		users linked to a certain doctype (in this case: Gender "Female"), he
 		should not be able to query other users (Gender "Male").
 		"""
-		# ensure required genders exist
-		for gender in ("Male", "Female"):
-			if frappe.db.exists("Gender", gender):
-				continue
-
-			frappe.get_doc({"doctype": "Gender", "gender": gender}).insert()
-
 		# asssign gender to test users
 		frappe.db.set_value("User", "test1@example.com", "gender", "Male")
 		frappe.db.set_value("User", "test2@example.com", "gender", "Female")
