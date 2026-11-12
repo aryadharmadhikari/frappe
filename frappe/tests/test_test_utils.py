@@ -1,13 +1,17 @@
 import logging
 import time
+from collections import defaultdict
 from datetime import timedelta
 from io import StringIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest import TestCase, TestResult
+from unittest.mock import patch
 
 import frappe
 from frappe.testing.result import TestResult as FrappeTestResult
 from frappe.tests import IntegrationTestCase, UnitTestCase
-from frappe.tests.utils import cleanup_committed_test_data
+from frappe.tests.utils import cleanup_committed_test_data, generators
 from frappe.tests.utils.generators import get_missing_records_doctypes, get_modules
 from frappe.utils.data import now_datetime
 
@@ -81,6 +85,54 @@ class TestTestUtils(IntegrationTestCase):
 		with self.secondary_connection():
 			for description in (published, pending):
 				self.assertFalse(frappe.db.exists("ToDo", {"description": description}))
+
+	def test_committed_baseline_can_be_rebuilt_and_survives_test_rollback(self):
+		description = f"Shared baseline {frappe.generate_hash(length=8)}"
+		fixture = {"doctype": "ToDo", "description": description}
+		self.addCleanup(cleanup_committed_test_data, frappe.db.delete, "ToDo", {"description": description})
+		directory = self.enterContext(TemporaryDirectory())
+		manager = generators.TestRecordManager()
+		manager.log_file = Path(directory) / "test-records.jsonl"
+		self.enterContext(patch.object(generators, "test_record_manager_instance", manager))
+		self.enterContext(patch.object(frappe.tests, "global_test_dependencies", ["ToDo"]))
+		self.enterContext(patch.object(frappe.local, "test_objects", defaultdict(list)))
+
+		def load_fixture(doctype):
+			generators.make_test_objects(doctype, [fixture])
+
+		def fail_after_insert(doctype):
+			load_fixture(doctype)
+			raise RuntimeError("Baseline setup failed")
+
+		with (
+			patch.object(generators, "make_test_records", fail_after_insert),
+			self.assertRaisesRegex(RuntimeError, "Baseline setup failed"),
+		):
+			generators.make_test_baseline("frappe")
+		self.assertFalse(frappe.db.exists("ToDo", {"description": description}))
+		self.assertFalse(manager.log_file.exists())
+
+		with patch.object(generators, "make_test_records", load_fixture):
+			generators.make_test_baseline("frappe")
+			journal = manager.log_file.read_text()
+			fixture_name = frappe.db.get_value("ToDo", {"description": description})
+			frappe.local.test_objects.clear()
+			manager._log = None
+			generators.make_test_baseline("frappe")
+		self.assertEqual(manager.log_file.read_text(), journal)
+		self.assertEqual(frappe.db.count("ToDo", {"description": description}), 1)
+
+		class BaselineCase(IntegrationTestCase):
+			def runTest(self):
+				frappe.db.delete("ToDo", {"name": fixture_name})
+				frappe.get_doc(doctype="ToDo", description=description).insert()
+
+		with self.set_user("test@example.com"):
+			result = BaselineCase().run(TestResult())
+		self.assertTrue(result.wasSuccessful(), result.errors + result.failures)
+		with self.secondary_connection():
+			self.assertEqual(frappe.db.get_value("ToDo", fixture_name, "description"), description)
+			self.assertEqual(frappe.db.count("ToDo", {"description": description}), 1)
 
 	def test_thread_locals(self):
 		frappe.flags.temp_flag_to_be_discarded = True

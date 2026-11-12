@@ -28,7 +28,7 @@ import unittest
 
 import frappe
 import frappe.utils.scheduler
-from frappe.tests.utils import make_test_records, toggle_test_mode
+from frappe.tests.utils import make_test_baseline, toggle_test_mode
 
 from .runner import TestRunnerError
 from .utils import debug_timer
@@ -107,12 +107,5 @@ class IntegrationTestPreparation:
 	@debug_timer
 	def _create_global_test_record_dependencies(app: str, category: str):
 		"""Create global test record dependencies"""
-		try:
-			test_module = frappe.get_module(f"{app}.tests")
-			if hasattr(test_module, "global_test_dependencies"):
-				logger.info(f"Creating global test record dependencies for {category} tests on {app} ...")
-				for doctype in test_module.global_test_dependencies:
-					logger.debug(f"Creating global test records for {doctype}")
-					make_test_records(doctype, commit=True)
-		except ModuleNotFoundError:
-			pass
+		logger.info(f"Creating the shared baseline for {category} tests on {app}")
+		make_test_baseline(app)

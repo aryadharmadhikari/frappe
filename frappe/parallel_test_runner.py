@@ -12,7 +12,7 @@ import click
 import requests
 
 import frappe
-from frappe.tests.utils import make_test_records, toggle_test_mode
+from frappe.tests.utils import make_test_baseline, toggle_test_mode
 
 from .testing.result import TestResult
 
@@ -77,11 +77,7 @@ class ParallelTestRunner:
 		for fn in frappe.get_hooks("before_tests", app_name=self.app):
 			frappe.get_attr(fn)()
 
-		test_module = frappe.get_module(f"{self.app}.tests")
-
-		if hasattr(test_module, "global_test_dependencies"):
-			for doctype in test_module.global_test_dependencies:
-				make_test_records(doctype, commit=True)
+		make_test_baseline(self.app)
 
 		elapsed = time.monotonic() - start_time
 		elapsed = click.style(f" ({elapsed:.03}s)", fg="red")

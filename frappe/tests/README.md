@@ -59,9 +59,12 @@ after any custom cleanup that needs the test's database changes.
 
 **Database commits in tests**
 
-- Use the shared test site and leave ordinary test writes in the transaction.
-- Commit a fixture only when a separate connection, request, or worker must read it,
-  or when the test checks a real transaction boundary.
+- Build shared master data in runner setup and commit it as the baseline. Reuse
+  records by name and leave ordinary test writes in the transaction.
+- Keep expensive fixtures used by one class in its test file. Build them once in
+  class setup and remove any committed records in class cleanup.
+- Within a test, commit only when a separate connection, request, or worker must
+  read its writes, or when the test checks a real transaction boundary.
 - Register cleanup before publishing a fixture. Wait for any worker, roll back pending
   writes, and commit only the deletion or restoration of the test's durable changes.
 - Keep schema changes scoped to test-owned tables or columns. Some schema operations

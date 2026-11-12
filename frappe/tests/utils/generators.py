@@ -28,6 +28,7 @@ __all__ = [
 	"get_missing_records_module_overrides",
 	"get_modules",
 	"load_test_records_for",
+	"make_test_baseline",
 	"make_test_objects",
 	"make_test_records",
 	"make_test_records_for_doctype",
@@ -366,6 +367,7 @@ class TestRecordManager:
 		testing_logger.debug(f"{self} initialized")
 		self.log_file = Path(frappe.get_site_path(PERSISTENT_TEST_LOG_FILE))
 		self._log = None
+		self.pending: list[tuple[str, list[Document]]] | None = None
 
 	def get(self):
 		if self._log is None:
@@ -377,7 +379,9 @@ class TestRecordManager:
 		return log.get(index_doctype, [])
 
 	def add(self, index_doctype, records: list["Document"]):
-		if records:
+		if records and self.pending is not None:
+			self.pending.append((index_doctype, records))
+		elif records:
 			self._append_to_log(index_doctype, records)
 			if self._log is None:
 				self.get()
@@ -429,6 +433,76 @@ def _clear_test_log():
 	log_file_path = frappe.get_site_path(PERSISTENT_TEST_LOG_FILE)
 	if os.path.exists(log_file_path):
 		os.remove(log_file_path)
+
+
+def make_test_baseline(app: str) -> None:
+	"""Load the runner's shared test records in one transaction."""
+	try:
+		test_module = frappe.get_module(f"{app}.tests")
+	except ModuleNotFoundError as exc:
+		if exc.name != f"{app}.tests":
+			raise
+		return
+
+	doctypes = getattr(test_module, "global_test_dependencies", ())
+	if not doctypes:
+		return
+	if app != "frappe":
+		for doctype in doctypes:
+			make_test_records(doctype, commit=True)
+		return
+
+	global test_record_manager_instance
+	if test_record_manager_instance is None:
+		test_record_manager_instance = TestRecordManager()
+	manager = test_record_manager_instance
+	original = {doctype: records.copy() for doctype, records in frappe.local.test_objects.items()}
+	manager.pending = []
+	try:
+		for doctype in doctypes:
+			make_test_records(doctype)
+		if "User" in doctypes:
+			_validate_baseline_users(frappe.local.test_objects["User"])
+		frappe.db.commit()
+	except Exception:
+		frappe.db.rollback()
+		frappe.local.test_objects.clear()
+		frappe.local.test_objects.update(original)
+		raise
+	finally:
+		pending = manager.pending
+		manager.pending = None
+
+	for doctype, records in pending:
+		manager.add(doctype, records)
+
+
+def _validate_baseline_users(records) -> None:
+	expected = {record["email"]: record for record in records if record["doctype"] == "User"}
+	if not expected:
+		return
+
+	fields = ("enabled", "first_name")
+	users = {
+		user.email: user
+		for user in frappe.get_all("User", {"email": ["in", list(expected)]}, ["name", "email", *fields])
+	}
+	roles = defaultdict(set)
+	for row in frappe.get_all(
+		"Has Role",
+		{"parenttype": "User", "parent": ["in", [user.name for user in users.values()]]},
+		["parent", "role"],
+	):
+		roles[row.parent].add(row.role)
+
+	for email, record in expected.items():
+		user = users.get(email)
+		if user is None:
+			raise ValueError(f"Test baseline user {email!r} is missing")
+		if any(user.get(field) != record[field] for field in fields if field in record):
+			raise ValueError(f"Test baseline user {email!r} has unexpected fields")
+		if {row["role"] for row in record.get("roles", [])} - roles[user.name]:
+			raise ValueError(f"Test baseline user {email!r} is missing a required role")
 
 
 def make_test_records(doctype, force=False, commit=False):
