@@ -5,6 +5,7 @@ from unittest.mock import patch
 import frappe
 from frappe.desk.query_report import get_print_format_data, run
 from frappe.tests import IntegrationTestCase
+from frappe.tests.utils import cleanup_committed_test_data
 from frappe.utils.print_format import download_report_pdf, render_report_jinja
 
 REPORT = "Test Jinja Print Report"
@@ -32,10 +33,10 @@ FILTERS = {"status": "Open"}
 
 
 class TestRenderReportJinja(IntegrationTestCase):
-	def setUp(self):
-		super().setUp()
-		self.enterContext(self.set_user("Administrator"))
-		make_fixtures()
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		make_report_fixtures(cls)
 
 	def render(self, **kwargs):
 		args = {
@@ -68,6 +69,7 @@ class TestRenderReportJinja(IntegrationTestCase):
 				self.render(print_format=print_format)
 
 	def test_letterhead_follows_the_no_letterhead_flag(self):
+		make_letter_head(LETTER_HEAD, "Report", "<div>Test Jinja Letterhead</div>")
 		self.assertIsNone(self.render(no_letterhead=1)["letter_head"])
 
 		rendered = self.render(no_letterhead=0, letterhead=LETTER_HEAD)
@@ -75,6 +77,8 @@ class TestRenderReportJinja(IntegrationTestCase):
 
 	def test_default_letterhead_is_scoped_to_report_flavour(self):
 		"""Without a named letterhead the Report default applies, not the DocType one."""
+		make_letter_head(LETTER_HEAD, "Report", "<div>Test Jinja Letterhead</div>")
+		make_letter_head(DOCTYPE_LETTER_HEAD, "DocType", "<div>Doctype Letterhead</div>")
 		header = self.render(no_letterhead=0, letterhead=None)["letter_head"]["header"]
 
 		self.assertIn("Test Jinja Letterhead", header)
@@ -82,9 +86,7 @@ class TestRenderReportJinja(IntegrationTestCase):
 
 	def test_requires_access_to_the_report(self):
 		make_user_without_access()
-		frappe.set_user(NO_ACCESS_USER)
-
-		with self.assertRaises(frappe.PermissionError):
+		with self.set_user(NO_ACCESS_USER), self.assertRaises(frappe.PermissionError):
 			self.render()
 
 	def test_requires_print_permission_on_ref_doctype(self):
@@ -101,11 +103,13 @@ class TestRenderReportJinja(IntegrationTestCase):
 
 
 class TestDownloadReportPdf(IntegrationTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		make_report_fixtures(cls, include_pdf=True)
+
 	def setUp(self):
 		super().setUp()
-		make_fixtures()
-		make_print_format(PF_TODO, "ToDo", "Jinja")
-		make_report_user()
 		self.enterContext(self.set_user(REPORT_USER))
 		for priority, description in (
 			("High", "Renew the example.com domain"),
@@ -173,9 +177,7 @@ class TestDownloadReportPdf(IntegrationTestCase):
 
 	def test_requires_access_to_the_report(self):
 		make_user_without_access()
-		frappe.set_user(NO_ACCESS_USER)
-
-		with self.assertRaises(frappe.PermissionError):
+		with self.set_user(NO_ACCESS_USER), self.assertRaises(frappe.PermissionError):
 			download_report_pdf(REPORT)
 
 	def test_in_background_emails_the_pdf_to_the_user(self):
@@ -219,10 +221,10 @@ class TestDownloadReportPdf(IntegrationTestCase):
 
 
 class TestGetPrintFormatData(IntegrationTestCase):
-	def setUp(self):
-		super().setUp()
-		self.enterContext(self.set_user("Administrator"))
-		make_fixtures()
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		make_report_fixtures(cls)
 
 	def test_reports_the_print_format_type(self):
 		"""The client picks the jinja vs js flow off this field."""
@@ -230,13 +232,22 @@ class TestGetPrintFormatData(IntegrationTestCase):
 		self.assertEqual(get_print_format_data(PF_JS)["print_format_type"], "JS")
 
 
-def make_fixtures():
-	make_report(REPORT)
-	make_print_format(PF_JINJA, REPORT, "Jinja", css=".title { color: red; }")
-	make_print_format(PF_JS, REPORT, "JS")
-	make_print_format(PF_DISABLED, REPORT, "Jinja", disabled=1)
-	make_letter_head(LETTER_HEAD, "Report", "<div>Test Jinja Letterhead</div>")
-	make_letter_head(DOCTYPE_LETTER_HEAD, "DocType", "<div>Doctype Letterhead</div>")
+def make_report_fixtures(test_class, *, include_pdf=False):
+	fixtures = []
+	test_class.addClassCleanup(cleanup_committed_test_data, delete_report_fixtures, fixtures)
+	fixtures.append(make_report(REPORT))
+	fixtures.append(make_print_format(PF_JINJA, REPORT, "Jinja", css=".title { color: red; }"))
+	fixtures.append(make_print_format(PF_JS, REPORT, "JS"))
+	fixtures.append(make_print_format(PF_DISABLED, REPORT, "Jinja", disabled=1))
+	if include_pdf:
+		fixtures.append(make_print_format(PF_TODO, "ToDo", "Jinja"))
+		fixtures.append(make_report_user())
+	frappe.db.commit()
+
+
+def delete_report_fixtures(fixtures):
+	for doc in reversed(fixtures):
+		frappe.delete_doc(doc.doctype, doc.name, force=True, delete_permanently=True)
 
 
 def make_report(name):
@@ -247,7 +258,7 @@ def make_report(name):
 	report.report_type = "Query Report"
 	report.is_standard = "No"
 	report.query = "select name from `tabRole` limit 1"
-	report.insert(ignore_permissions=True, ignore_if_duplicate=True)
+	return report.insert(ignore_permissions=True)
 
 
 def make_print_format(name, report, print_format_type, css="", disabled=0):
@@ -260,10 +271,11 @@ def make_print_format(name, report, print_format_type, css="", disabled=0):
 	pf.custom_format = 1
 	pf.html = TEMPLATE
 	pf.css = css
-	pf.insert(ignore_permissions=True, ignore_if_duplicate=True)
+	pf.insert(ignore_permissions=True)
 	if disabled:
 		# set after insert so the format passes its own validation first
 		frappe.db.set_value("Print Format", name, "disabled", 1)
+	return pf
 
 
 def make_letter_head(name, letter_head_for, content):
@@ -289,5 +301,6 @@ def make_report_user():
 	user.email = REPORT_USER
 	user.first_name = "Report User"
 	user.send_welcome_email = 0
-	user.insert(ignore_permissions=True, ignore_if_duplicate=True)
+	user.insert(ignore_permissions=True)
 	user.add_roles("System Manager")
+	return user
