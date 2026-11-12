@@ -5,6 +5,7 @@ import json
 import frappe
 from frappe.desk.doctype.sidebar.test_sidebar import sidebarless_module
 from frappe.tests import IntegrationTestCase
+from frappe.tests.baseline import DESK_USER, WORKSPACE_MANAGER
 
 
 class TestWorkspace(IntegrationTestCase):
@@ -188,32 +189,14 @@ class TestWorkspaceAccessLevels(IntegrationTestCase):
 	"""
 
 	MODULE = "Test Access Level Module"
-	DESK_USER = "test-workspace-desk-user@example.com"
-	MANAGER = "test-workspace-page-manager@example.com"
 
 	def setUp(self):
 		frappe.set_user("Administrator")
 		# not `create_module`: in developer mode a `Module Def` writes itself into modules.txt
 		# and only undoes that on commit, which a rolled-back test never reaches
 		self.enterContext(sidebarless_module(self.MODULE))
-		self.make_user(self.DESK_USER, ["Desk User"])
-		self.make_user(self.MANAGER, ["Desk User", "Workspace Manager"])
 		self.addCleanup(frappe.set_user, "Administrator")
 		self.addCleanup(frappe.db.delete, "Workspace", {"module": self.MODULE})
-
-	def make_user(self, email, roles):
-		if frappe.db.exists("User", email):
-			frappe.delete_doc("User", email, force=True, ignore_permissions=True)
-		frappe.get_doc(
-			{
-				"doctype": "User",
-				"email": email,
-				"first_name": email.split("@")[0],
-				"send_welcome_email": 0,
-				"roles": [{"role": role} for role in roles],
-			}
-		).insert(ignore_permissions=True)
-		self.addCleanup(frappe.delete_doc, "User", email, force=True, ignore_missing=True)
 
 	def page(self, title, **extra):
 		return {
@@ -230,18 +213,18 @@ class TestWorkspaceAccessLevels(IntegrationTestCase):
 	def test_a_desk_user_creates_a_private_page(self):
 		from frappe.desk.doctype.workspace.workspace import new_page
 
-		frappe.set_user(self.DESK_USER)
+		frappe.set_user(DESK_USER)
 		# The label carries the owner, which is what keeps two users' pages of the same name
 		# apart, and `Workspace` is named after it.
-		name = f"Test Desk User Private Page-{self.DESK_USER}"
-		new_page(self.page("Test Desk User Private Page", label=name, for_user=self.DESK_USER))
+		name = f"Test Desk User Private Page-{DESK_USER}"
+		new_page(self.page("Test Desk User Private Page", label=name, for_user=DESK_USER))
 
-		self.assertEqual(frappe.db.get_value("Workspace", name, "for_user"), self.DESK_USER)
+		self.assertEqual(frappe.db.get_value("Workspace", name, "for_user"), DESK_USER)
 
 	def test_a_desk_user_cannot_create_a_page_anybody_else_can_see(self):
 		from frappe.desk.doctype.workspace.workspace import new_page
 
-		frappe.set_user(self.DESK_USER)
+		frappe.set_user(DESK_USER)
 		with self.assertRaises(frappe.PermissionError):
 			new_page(self.page("Test Desk User Public Page", public=1))
 
@@ -250,10 +233,10 @@ class TestWorkspaceAccessLevels(IntegrationTestCase):
 	def test_a_desk_user_cannot_edit_a_public_page(self):
 		from frappe.desk.doctype.workspace.workspace import new_page, update_page
 
-		frappe.set_user(self.MANAGER)
+		frappe.set_user(WORKSPACE_MANAGER)
 		new_page(self.page("Test Manager Public Page", public=1))
 
-		frappe.set_user(self.DESK_USER)
+		frappe.set_user(DESK_USER)
 		with self.assertRaises(frappe.PermissionError):
 			update_page("Test Manager Public Page", "Stolen", "", "", "", 0)
 
@@ -264,7 +247,7 @@ class TestWorkspaceAccessLevels(IntegrationTestCase):
 		shared page without them is everyone."""
 		from frappe.desk.doctype.workspace.workspace import new_page
 
-		frappe.set_user(self.MANAGER)
+		frappe.set_user(WORKSPACE_MANAGER)
 		new_page(self.page("Test Manager Public Page", public=1))
 		new_page(self.page("Test Manager Group Page", public=1, roles=[{"role": "System Manager"}]))
 
@@ -283,7 +266,7 @@ class TestWorkspaceAccessLevels(IntegrationTestCase):
 		endpoint behind it agrees: a workspace names a module that exists or it is not saved."""
 		from frappe.desk.doctype.workspace.workspace import new_page
 
-		frappe.set_user(self.MANAGER)
+		frappe.set_user(WORKSPACE_MANAGER)
 		with self.assertRaises(frappe.ValidationError):
 			new_page(self.page("Test Inventing A Module", module="Test No Such Module At All"))
 
