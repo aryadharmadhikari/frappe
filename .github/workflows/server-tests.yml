@@ -27,7 +27,7 @@ jobs:
     steps:
       - name: Clone
         uses: actions/checkout@v7
-      - name: Check if unit tests should be run
+      - name: Select server tests
         id: check-build
         run: |
           python "${GITHUB_WORKSPACE}/.github/helper/roulette.py"
@@ -38,27 +38,21 @@ jobs:
           REPO_NAME: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  test:
-    name: Integration
+  setup:
+    name: Setup (${{ matrix.db }})
     needs: checkrun
     if: ${{ needs.checkrun.outputs.build == 'strawberry' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
+    env: &server-environment
       NODE_ENV: "production"
-      # noisy 3rd party library warnings
       PYTHONWARNINGS: "module,ignore:::babel.messages.extract"
       DB_ROOT_PASSWORD: db_root
-
     strategy:
       fail-fast: false
       matrix:
-        # Always run against postgres too -- it is a supported backend (see roulette.py).
-        db: ${{ fromJson(needs.checkrun.outputs.run_postgres == 'true' && '["mariadb", "postgres"]' || '["mariadb"]') }}
-        index: [1, 2]
+        db: &databases ${{ fromJson(needs.checkrun.outputs.run_postgres == 'true' && '["mariadb", "postgres"]' || '["mariadb"]') }}
     services:
-      postgres:
-        # An empty image skips the service, so mariadb jobs do not wait for postgres to start.
+      postgres: &postgres-service
         image: ${{ matrix.db == 'postgres' && 'postgres:18.0' || '' }}
         ports:
           - 5432:5432
@@ -69,13 +63,81 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 3
-      mariadb:
+      mariadb: &mariadb-service
         image: mariadb:11.8
         ports:
           - 3306:3306
         options: --health-cmd="healthcheck.sh --connect --innodb_initialized" --health-interval=5s --health-timeout=2s --health-retries=3 --tmpfs=/var/lib/mysql:rw,noexec,nosuid,size=2g
         env:
           MARIADB_ROOT_PASSWORD: ${{ env.DB_ROOT_PASSWORD }}
+    steps:
+      - &prepared-bench-key
+        name: Compute prepared bench cache key
+        id: prepared-bench-key
+        env:
+          DB: ${{ matrix.db }}
+        run: echo "key=prepared-bench-v2-$(lsb_release -rs)-$RUNNER_ARCH-$DB-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Check prepared bench cache
+        id: prepared-bench-cache
+        uses: actions/cache/restore@v6
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/prepared-bench
+          key: ${{ steps.prepared-bench-key.outputs.key }}
+          lookup-only: true
+
+      - uses: actions/checkout@v7
+        if: steps.prepared-bench-cache.outputs.cache-hit != 'true'
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        name: Environment Setup
+        if: steps.prepared-bench-cache.outputs.cache-hit != 'true'
+        with:
+          python-version: '3.14'
+          node-version: 24
+          disable-socketio: true
+          db-root-password: ${{ env.DB_ROOT_PASSWORD }}
+          db: ${{ matrix.db }}
+        env:
+          PYTHONWARNINGS: "ignore:Unimplemented abstract methods {'locate_file'}:DeprecationWarning"
+
+      - name: Save prepared bench
+        if: steps.prepared-bench-cache.outputs.cache-hit != 'true'
+        env:
+          SNAPSHOT_DIR: ${{ runner.temp }}/prepared-bench
+          DB: ${{ matrix.db }}
+        run: bash .github/helper/save-prepared-bench.sh
+
+      - name: Cache prepared bench
+        if: steps.prepared-bench-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/prepared-bench
+          key: ${{ steps.prepared-bench-key.outputs.key }}
+
+      - name: Show bench output
+        if: always() && steps.prepared-bench-cache.outputs.cache-hit != 'true'
+        run: cat bench_start.log || true
+
+  test:
+    name: Integration
+    needs: [checkrun, setup]
+    if: ${{ needs.checkrun.outputs.build == 'strawberry' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env: *server-environment
+
+    strategy:
+      fail-fast: false
+      matrix:
+        db: *databases
+        index: [1, 2, 3, 4]
+    services:
+      postgres: *postgres-service
+      mariadb: *mariadb-service
       smtp_server:
         image: rnwood/smtp4dev:3.7.1
         ports:
@@ -83,14 +145,24 @@ jobs:
           - 3000:80
     steps:
       - uses: actions/checkout@v7
-      - uses: ./.github/actions/setup
-        name: Environment Setup
+
+      - *prepared-bench-key
+
+      - name: Restore prepared bench cache
+        id: prepared-bench-cache
+        uses: actions/cache/restore@v6
+        continue-on-error: true
         with:
-          python-version: '3.14'
-          node-version: 24
+          path: ${{ runner.temp }}/prepared-bench
+          key: ${{ steps.prepared-bench-key.outputs.key }}
+
+      - uses: ./.github/actions/setup
+        name: Prepare integration environment
+        with:
           disable-socketio: true
           db-root-password: ${{ env.DB_ROOT_PASSWORD }}
           db: ${{ matrix.db }}
+          prepared-bench-path: ${{ steps.prepared-bench-cache.outputs.cache-hit == 'true' && format('{0}/prepared-bench', runner.temp) || '' }}
         env:
           PYTHONWARNINGS: "ignore:Unimplemented abstract methods {'locate_file'}:DeprecationWarning"
 
@@ -102,7 +174,7 @@ jobs:
           # consumed by bench run-parallel-tests
           CAPTURE_COVERAGE: true
           BUILD_NUMBER: ${{ matrix.index }}
-          TOTAL_BUILDS: 2
+          TOTAL_BUILDS: 4
           FRAPPE_SENTRY_DSN: ${{ secrets.SENTRY_DSN || '' }}
 
       - name: Upload coverage data
@@ -117,13 +189,7 @@ jobs:
 
       - name: Show bench output
         if: ${{ always() }}
-        run: |
-          cat bench_start.log || true
-          cd logs
-          for f in ${GITHUB_WORKSPACE}/*.log*; do
-            echo "Printing log: $f";
-            cat $f
-          done
+        run: bash .github/helper/show-bench-logs.sh
 
   migrate:
     name: Migration
@@ -135,13 +201,7 @@ jobs:
       PYTHONWARNINGS: "ignore"
       DB_ROOT_PASSWORD: db_root
     services:
-      mariadb:
-        image: mariadb:11.8
-        ports:
-          - 3306:3306
-        options: --health-cmd="healthcheck.sh --connect --innodb_initialized" --health-interval=5s --health-timeout=2s --health-retries=3 --tmpfs=/var/lib/mysql:rw,noexec,nosuid,size=2g
-        env:
-          MARIADB_ROOT_PASSWORD: ${{ env.DB_ROOT_PASSWORD }}
+      mariadb: *mariadb-service
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
@@ -163,57 +223,16 @@ jobs:
       - name: Download database artifact
         env:
           DB_ARTIFACT_URL: https://frappe.io/files/v14-frappe.sql.gz
-        run: |
-          wget "$DB_ARTIFACT_URL"
-          bench --site test_site --force restore ${GITHUB_WORKSPACE}/$(basename "$DB_ARTIFACT_URL")
-
-          function update_to_version() {
-              version="$1"
-              python_version="${2:-3.14}"
-
-              if [ -z "$version" ]; then
-                  ref="${{ github.sha }}"
-              else
-                  ref="version-$version-hotfix"
-              fi
-
-              echo "Updating to $ref"
-
-              git -C apps/frappe fetch --depth 1 upstream "$ref":"$ref"
-              git -C apps/frappe checkout --quiet --force "$ref"
-
-              if pgrep honcho > /dev/null; then
-                  pgrep honcho | xargs kill
-                  sleep 10
-              fi
-
-              bench migrate-env "python$python_version"
-
-              bench setup requirements
-              bench start &>> ${GITHUB_WORKSPACE}/bench_start.log &
-              bench --site test_site migrate
-          }
-
-          declare -f update_to_version > "$RUNNER_TEMP/migrate"
+        run: bash .github/helper/test-server-migration.sh restore
 
       - name: Update to v15
-        run: |
-          source $RUNNER_TEMP/migrate
-          update_to_version 15 3.13
-          exit $?
+        run: bash .github/helper/test-server-migration.sh 15 3.13
 
       - name: Update to v16
-        run: |
-          source $RUNNER_TEMP/migrate
-          update_to_version 16
-          exit $?
+        run: bash .github/helper/test-server-migration.sh 16
 
       - name: Update to last commit
-        run: |
-          source $RUNNER_TEMP/migrate
-          update_to_version
-          exit $?
-          bench --site test_site execute frappe.tests.utils.check_orpahned_doctypes
+        run: bash .github/helper/test-server-migration.sh
 
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@v3
@@ -221,13 +240,7 @@ jobs:
 
       - name: Show bench output
         if: ${{ always() }}
-        run: |
-          cat bench_start.log || true
-          cd logs
-          for f in ${GITHUB_WORKSPACE}/*.log*; do
-            echo "Printing log: $f";
-            cat $f
-          done
+        run: bash .github/helper/show-bench-logs.sh
 
   coverage:
     name: Coverage Wrap Up
@@ -237,7 +250,7 @@ jobs:
     steps:
       - name: Clone
         uses: actions/checkout@v7
-      - name: Download artifacts
+      - name: Download coverage data
         uses: actions/download-artifact@v8.0.2
       - name: Upload coverage data
         uses: codecov/codecov-action@v7
@@ -251,7 +264,7 @@ jobs:
   # TIP: Require this single check in branch protection, e.g. Server / Success
   success:
     name: Server Success
-    needs: [test, migrate]
+    needs: [setup, test, migrate]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -259,6 +272,7 @@ jobs:
         shell: python
         run: |
           stati = [
+            '${{ needs.setup.result }}',
             '${{ needs.test.result }}',
             '${{ needs.migrate.result }}',
           ]

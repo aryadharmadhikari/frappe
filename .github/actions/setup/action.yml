@@ -35,6 +35,9 @@ inputs:
     default: mariadb
   db-root-password:
     required: true
+  prepared-bench-path:
+    description: Directory containing a prepared bench snapshot to restore
+    default: ''
 
 runs:
   using: "composite"
@@ -46,17 +49,34 @@ runs:
       git config --global init.defaultBranch main
       git config --global advice.detachedHead false
 
+  - name: Read prepared environment
+    id: prepared
+    if: ${{ inputs.prepared-bench-path != '' }}
+    shell: bash -e {0}
+    env:
+      SNAPSHOT_DIR: ${{ inputs.prepared-bench-path }}
+      DB: ${{ inputs.db }}
+    run: |
+      test "$(cat "$SNAPSHOT_DIR/workspace")" = "$GITHUB_WORKSPACE"
+      test "$(cat "$SNAPSHOT_DIR/ubuntu-version")" = "$(lsb_release -rs)"
+      test "$(cat "$SNAPSHOT_DIR/db")" = "$DB"
+      echo "python-version=$(cat "$SNAPSHOT_DIR/python-version")" >> "$GITHUB_OUTPUT"
+      echo "node-version=$(cat "$SNAPSHOT_DIR/node-version")" >> "$GITHUB_OUTPUT"
+
   - name: Clone
+    if: ${{ inputs.prepared-bench-path == '' }}
     uses: actions/checkout@v6
     with:
       path: frappe-src
+      persist-credentials: false
 
   - name: Setup Python
     uses: actions/setup-python@v6
     with:
-      python-version: ${{ inputs.python-version }}
+      python-version: ${{ steps.prepared.outputs.python-version || inputs.python-version }}
 
-  - shell: bash -e {0}
+  - if: ${{ inputs.prepared-bench-path == '' }}
+    shell: bash -e {0}
     run: |
       # Check for valid Python & Merge Conflicts
       python -m compileall -q -f "${GITHUB_WORKSPACE}/frappe-src"
@@ -67,8 +87,8 @@ runs:
 
   - uses: actions/setup-node@v6
     with:
-      node-version: ${{ inputs.node-version }}
-      cache: yarn
+      node-version: ${{ steps.prepared.outputs.node-version || inputs.node-version }}
+      cache: ${{ inputs.prepared-bench-path == '' && 'yarn' || '' }}
       cache-dependency-path: |
         frappe-src/yarn.lock
         frappe-src/studio/frontend/yarn.lock
@@ -115,7 +135,8 @@ runs:
       echo "/usr/lib/postgresql/18/bin" >> $GITHUB_PATH
       uv tool install frappe-bench
 
-  - shell: bash -e {0}
+  - if: ${{ inputs.prepared-bench-path == '' }}
+    shell: bash -e {0}
     run: |
       # Init Bench
       start_time=$(date +%s)
@@ -144,34 +165,25 @@ runs:
         sed -i '/^worker[^:]*:/d' Procfile
       fi
 
-      # Tests declare the services they need with requires_test_service(). Derive those flags from the same inputs that trim the Procfile, so a job cannot  start a service it tells the tests is absent (or the reverse).
-      if [ "${{ inputs.disable-web }}" == "true" ]; then
-        echo "FRAPPE_TEST_WEB_SERVER=0" >> "$GITHUB_ENV"
-      else
-        echo "FRAPPE_TEST_WEB_SERVER=1" >> "$GITHUB_ENV"
-      fi
-      if [ "${{ inputs.disable-workers }}" == "true" ]; then
-        echo "FRAPPE_TEST_BACKGROUND_WORKER=0" >> "$GITHUB_ENV"
-      else
-        echo "FRAPPE_TEST_BACKGROUND_WORKER=1" >> "$GITHUB_ENV"
-      fi
-
       end_time=$(date +%s)
       echo -e "\033[33mInit Bench: $((end_time - start_time)) seconds\033[0m"
 
   - name: Cache island toolchain
+    if: ${{ inputs.prepared-bench-path == '' }}
     uses: actions/cache@v4
     with:
       path: ${{ github.workspace }}/apps/frappe/island-toolchain/node_modules
       key: island-toolchain-${{ runner.os }}-node${{ inputs.node-version }}-${{ hashFiles('frappe-src/island-toolchain/yarn.lock') }}
 
   - name: Cache Chromium
+    if: ${{ inputs.prepared-bench-path == '' }}
     uses: actions/cache@v4
     with:
       path: ${{ github.workspace }}/chromium
       key: chromium-${{ runner.os }}-${{ hashFiles('frappe-src/frappe/utils/chromium/download.py') }}
 
-  - shell: bash -e {0}
+  - if: ${{ inputs.prepared-bench-path == '' }}
+    shell: bash -e {0}
     run: |
       # Set up the Chromium build that renders PDFs
       start_time=$(date +%s)
@@ -179,7 +191,8 @@ runs:
       end_time=$(date +%s)
       echo -e "\033[33mSetup Chromium: $((end_time - start_time)) seconds\033[0m"
 
-  - shell: bash -e {0}
+  - if: ${{ inputs.prepared-bench-path == '' }}
+    shell: bash -e {0}
     run: |
       # Install dev/test dependencies (python and node deps are independent,
       # so install them concurrently)
@@ -202,7 +215,8 @@ runs:
       end_time=$(date +%s)
       echo -e "\033[33mInstall dev/test deps: $((end_time - start_time)) seconds\033[0m"
 
-  - shell: bash -e {0}
+  - if: ${{ inputs.prepared-bench-path == '' }}
+    shell: bash -e {0}
     env:
       DB: ${{ inputs.db }}
       BUILD_ASSETS: ${{ inputs.build-assets }}
@@ -274,7 +288,45 @@ runs:
       end_time=$(date +%s)
       echo -e "\033[33mCreate Site + Build Assets: $((end_time - start_time)) seconds\033[0m"
 
+  - name: Restore prepared bench
+    if: ${{ inputs.prepared-bench-path != '' }}
+    shell: bash -e {0}
+    env:
+      SNAPSHOT_DIR: ${{ inputs.prepared-bench-path }}
+      DB: ${{ inputs.db }}
+      MYSQL_PWD: ${{ inputs.db-root-password }}
+    run: |
+      tar -xf "$SNAPSHOT_DIR/bench.tar"
+      mkdir -p config/pids logs sites/test_site/logs
+      if [ "$DB" == "mariadb" ]; then
+        mariadb -h 127.0.0.1 -u root -e "
+          SET GLOBAL innodb_flush_log_at_trx_commit = 0;
+          SET GLOBAL sync_binlog = 0;"
+      fi
+      bench --site test_site restore "$SNAPSHOT_DIR/database.sql.gz" --non-interactive
+
+  - name: Declare test services
+    shell: bash -e {0}
+    run: |
+      if [ "${{ inputs.disable-web }}" == "true" ]; then
+        echo "FRAPPE_TEST_WEB_SERVER=0" >> "$GITHUB_ENV"
+      else
+        echo "FRAPPE_TEST_WEB_SERVER=1" >> "$GITHUB_ENV"
+      fi
+      if [ "${{ inputs.disable-workers }}" == "true" ]; then
+        echo "FRAPPE_TEST_BACKGROUND_WORKER=0" >> "$GITHUB_ENV"
+      else
+        echo "FRAPPE_TEST_BACKGROUND_WORKER=1" >> "$GITHUB_ENV"
+      fi
+
   - shell: bash -e {0}
     run: |
       # Start Bench
       bench start &> ${GITHUB_WORKSPACE}/bench_start.log &
+
+  - name: Wait for restored web server
+    if: ${{ inputs.prepared-bench-path != '' && inputs.disable-web != 'true' }}
+    shell: bash -e {0}
+    run: |
+      curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-connrefused \
+        --max-time 5 http://test_site:8000/api/method/ping > /dev/null
