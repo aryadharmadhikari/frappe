@@ -5,6 +5,7 @@ from unittest.mock import patch
 import frappe
 from frappe.desk.query_report import get_print_format_data, run
 from frappe.tests import IntegrationTestCase
+from frappe.tests.baseline import SYSTEM_MANAGER
 from frappe.tests.utils import cleanup_committed_test_data
 from frappe.utils.print_format import download_report_pdf, render_report_jinja
 
@@ -16,7 +17,6 @@ PF_TODO = "Test Jinja Print ToDo Format"
 LETTER_HEAD = "Test Jinja Print Letter Head"
 DOCTYPE_LETTER_HEAD = "Test Jinja Print Doctype Letter Head"
 NO_ACCESS_USER = "test-jinja-print-no-access@example.com"
-REPORT_USER = "test-jinja-print-report-user@example.com"
 
 TEMPLATE = """
 <h1 class="title">{{ report.report_name }}</h1>
@@ -110,7 +110,7 @@ class TestDownloadReportPdf(IntegrationTestCase):
 
 	def setUp(self):
 		super().setUp()
-		self.enterContext(self.set_user(REPORT_USER))
+		self.enterContext(self.set_user(SYSTEM_MANAGER))
 		for priority, description in (
 			("High", "Renew the example.com domain"),
 			("Low", "Archive old invoices"),
@@ -152,7 +152,7 @@ class TestDownloadReportPdf(IntegrationTestCase):
 		self.assertIn("Opening", html)
 
 	def test_prints_a_datetime_in_the_user_time_zone(self):
-		frappe.db.set_value("User", REPORT_USER, "time_zone", "UTC")
+		frappe.db.set_value("User", SYSTEM_MANAGER, "time_zone", "UTC")
 		report_run = {
 			"columns": [{"fieldname": "opened_on", "fieldtype": "Datetime"}],
 			"result": [{"opened_on": "2026-10-24 10:00:00"}],
@@ -189,7 +189,7 @@ class TestDownloadReportPdf(IntegrationTestCase):
 			download_report_pdf("ToDo", no_letterhead=1, in_background=1)
 
 		send_report_email.assert_called_once_with(
-			REPORT_USER, "ToDo", "pdf", b"%PDF", attached_to_name="ToDo"
+			SYSTEM_MANAGER, "ToDo", "pdf", b"%PDF", attached_to_name="ToDo"
 		)
 
 	def test_prints_the_value_from_the_report_formatter(self):
@@ -241,7 +241,6 @@ def make_report_fixtures(test_class, *, include_pdf=False):
 	fixtures.append(make_print_format(PF_DISABLED, REPORT, "Jinja", disabled=1))
 	if include_pdf:
 		fixtures.append(make_print_format(PF_TODO, "ToDo", "Jinja"))
-		fixtures.append(make_report_user())
 	frappe.db.commit()
 
 
@@ -294,13 +293,3 @@ def make_user_without_access():
 	user.first_name = "No Access"
 	user.send_welcome_email = 0
 	user.insert(ignore_permissions=True, ignore_if_duplicate=True)
-
-
-def make_report_user():
-	user = frappe.new_doc("User")
-	user.email = REPORT_USER
-	user.first_name = "Report User"
-	user.send_welcome_email = 0
-	user.insert(ignore_permissions=True)
-	user.add_roles("System Manager")
-	return user

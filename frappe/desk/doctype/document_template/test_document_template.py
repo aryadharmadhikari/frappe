@@ -28,6 +28,7 @@ from frappe.permissions import (
 	clear_user_permissions_for_doctype,
 )
 from frappe.tests import IntegrationTestCase
+from frappe.tests.baseline import DESK_USER, SYSTEM_MANAGER
 
 REF_DOCTYPE = "ToDo"
 ADMIN_ONLY_DOCTYPE = "User"  # Desk users cannot create User docs.
@@ -149,10 +150,9 @@ class TestDocumentTemplate(IntegrationTestCase):
 				self._make_template("shared-public", owner=user_b.name)
 
 	def test_duplicate_private_same_owner_blocked(self):
-		with test_user(roles=["System Manager"]) as user:
-			self._make_template("priv", private=1, owner=user.name)
-			with self.assertRaises(frappe.ValidationError):
-				self._make_template("priv", private=1, owner=user.name)
+		self._make_template("priv", private=1, owner=SYSTEM_MANAGER)
+		with self.assertRaises(frappe.ValidationError):
+			self._make_template("priv", private=1, owner=SYSTEM_MANAGER)
 
 	def test_duplicate_private_different_owners_allowed(self):
 		with test_user(roles=["System Manager"]) as u1, test_user(roles=["System Manager"]) as u2:
@@ -160,9 +160,8 @@ class TestDocumentTemplate(IntegrationTestCase):
 			self._make_template("priv-shared", private=1, owner=u2.name)
 
 	def test_user_can_have_public_and_private_with_same_name(self):
-		with test_user(roles=["System Manager"]) as user:
-			self._make_template("mix", private=0, owner=user.name)
-			self._make_template("mix", private=1, owner=user.name)
+		self._make_template("mix", private=0, owner=SYSTEM_MANAGER)
+		self._make_template("mix", private=1, owner=SYSTEM_MANAGER)
 
 	def test_duplicate_check_scoped_to_reference_doctype(self):
 		"""Templates with the same name for *different* reference doctypes are fine."""
@@ -174,13 +173,11 @@ class TestDocumentTemplate(IntegrationTestCase):
 
 	def test_public_template_does_not_collide_with_existing_private_of_same_name(self):
 		"""A public template with the same name as someone's private template is allowed."""
-		with test_user(roles=["System Manager"]) as user:
-			self._make_template("collide-name", private=1, owner=user.name)
-			self._make_template("collide-name", private=0)
+		self._make_template("collide-name", private=1, owner=SYSTEM_MANAGER)
+		self._make_template("collide-name", private=0)
 
 	def test_only_owner_can_make_template_public(self):
-		with test_user(roles=["System Manager"]) as owner_user:
-			t = self._make_template("convert-me", private=1, owner=owner_user.name)
+		t = self._make_template("convert-me", private=1, owner=SYSTEM_MANAGER)
 
 		t.reload()
 		t.private = 0
@@ -198,8 +195,7 @@ class TestDocumentTemplate(IntegrationTestCase):
 			self.assertEqual(t.private, 0)
 
 	def test_changing_unrelated_fields_as_non_owner_does_not_trigger_conversion_check(self):
-		with test_user(roles=["System Manager"]) as owner_user:
-			t = self._make_template("untouched-private", private=1, owner=owner_user.name)
+		t = self._make_template("untouched-private", private=1, owner=SYSTEM_MANAGER)
 
 		t.reload()
 		t.disabled = 1
@@ -209,7 +205,7 @@ class TestDocumentTemplate(IntegrationTestCase):
 		self.assertEqual(t.disabled, 1)
 
 	def test_get_templates_requires_create_on_reference_doctype(self):
-		with test_user(roles=["Desk User"]) as user, self.set_user(user.name):
+		with self.set_user(DESK_USER):
 			with self.assertRaises(frappe.PermissionError):
 				get_templates(reference_doctype=ADMIN_ONLY_DOCTYPE)
 
@@ -251,19 +247,18 @@ class TestDocumentTemplate(IntegrationTestCase):
 
 	def test_get_templates_sorts_by_disabled_private_name(self):
 		"""Order: enabled before disabled, private before public, name asc."""
-		with test_user(roles=["Desk User"]) as user:
-			self._make_template("zzz-public", private=0, owner=user.name)
-			self._make_template("aaa-public", private=0, owner=user.name)
-			self._make_template("priv-bbb", private=1, owner=user.name)
-			self._make_template("priv-aaa", private=1, owner=user.name)
-			self._make_template("disabled-x", private=0, disabled=1, owner=user.name)
+		self._make_template("zzz-public", private=0, owner=DESK_USER)
+		self._make_template("aaa-public", private=0, owner=DESK_USER)
+		self._make_template("priv-bbb", private=1, owner=DESK_USER)
+		self._make_template("priv-aaa", private=1, owner=DESK_USER)
+		self._make_template("disabled-x", private=0, disabled=1, owner=DESK_USER)
 
-			with self.set_user(user.name):
-				ordered = [
-					t.template_name
-					for t in get_templates(reference_doctype=REF_DOCTYPE, limit_page_length=50)["templates"]
-					if t.template_name.startswith("_Test ")
-				]
+		with self.set_user(DESK_USER):
+			ordered = [
+				t.template_name
+				for t in get_templates(reference_doctype=REF_DOCTYPE, limit_page_length=50)["templates"]
+				if t.template_name.startswith("_Test ")
+			]
 
 		self.assertEqual(
 			ordered,
@@ -271,14 +266,13 @@ class TestDocumentTemplate(IntegrationTestCase):
 		)
 
 	def test_get_templates_pagination_and_has_next_flag(self):
-		with test_user(roles=["Desk User"]) as user:
-			for i in range(7):
-				self._make_template(f"t-{i:02d}", private=1, owner=user.name)
+		for i in range(7):
+			self._make_template(f"t-{i:02d}", private=1, owner=DESK_USER)
 
-			with self.set_user(user.name):
-				page1 = get_templates(reference_doctype=REF_DOCTYPE, limit_start=0, limit_page_length=3)
-				page2 = get_templates(reference_doctype=REF_DOCTYPE, limit_start=3, limit_page_length=3)
-				page3 = get_templates(reference_doctype=REF_DOCTYPE, limit_start=6, limit_page_length=3)
+		with self.set_user(DESK_USER):
+			page1 = get_templates(reference_doctype=REF_DOCTYPE, limit_start=0, limit_page_length=3)
+			page2 = get_templates(reference_doctype=REF_DOCTYPE, limit_start=3, limit_page_length=3)
+			page3 = get_templates(reference_doctype=REF_DOCTYPE, limit_start=6, limit_page_length=3)
 
 		# Count only _Test t-XX templates owned by this user
 		self.assertEqual(len([t for t in page1["templates"] if t.template_name.startswith("_Test t-")]), 3)
@@ -290,7 +284,7 @@ class TestDocumentTemplate(IntegrationTestCase):
 
 	def test_get_templates_strips_data_payload_from_response(self):
 		self._make_template("with-data", data=_make_data(description="secret"))
-		with test_user(roles=["Desk User"]) as user, self.set_user(user.name):
+		with self.set_user(DESK_USER):
 			result = get_templates(reference_doctype=REF_DOCTYPE)
 		self.assertTrue(result["templates"])
 		for t in result["templates"]:
@@ -372,7 +366,7 @@ class TestDocumentTemplate(IntegrationTestCase):
 
 	def test_get_templates_clamps_negative_limit_start(self):
 		self._make_template("clamp-test")
-		with test_user(roles=["Desk User"]) as user, self.set_user(user.name):
+		with self.set_user(DESK_USER):
 			result = get_templates(reference_doctype=REF_DOCTYPE, limit_start=-10, limit_page_length=5)
 		self.assertEqual(len([t for t in result["templates"] if t.template_name.startswith("_Test ")]), 1)
 
@@ -380,7 +374,7 @@ class TestDocumentTemplate(IntegrationTestCase):
 		"""``limit_page_length<=0`` is normalised to 1."""
 		for i in range(3):
 			self._make_template(f"clamp-len-{i}")
-		with test_user(roles=["Desk User"]) as user, self.set_user(user.name):
+		with self.set_user(DESK_USER):
 			result = get_templates(reference_doctype=REF_DOCTYPE, limit_page_length=0)
 		self.assertEqual(len(result["templates"]), 1)
 		self.assertTrue(result["has_next_page"])
@@ -411,8 +405,7 @@ class TestDocumentTemplate(IntegrationTestCase):
 
 	def test_query_conditions_for_user_without_write_without_owner(self):
 		"""Plain Desk User has write only via if_owner — gets blocked at query level."""
-		with test_user(roles=["Desk User"]) as user:
-			cond = get_permission_query_conditions(user.name)
+		cond = get_permission_query_conditions(DESK_USER)
 		self.assertEqual(cond, "1=0")
 
 	def test_query_conditions_for_user_with_no_creatable_doctypes(self):
@@ -420,8 +413,7 @@ class TestDocumentTemplate(IntegrationTestCase):
 		self.assertEqual(cond, "1=0")
 
 	def test_query_conditions_for_system_manager_has_no_private_filter(self):
-		with test_user(roles=["System Manager"]) as user:
-			cond = get_permission_query_conditions(user.name)
+		cond = get_permission_query_conditions(SYSTEM_MANAGER)
 		self.assertNotEqual(cond, "1=0")
 		self.assertIn("reference_doctype", cond)
 		self.assertNotIn("private", cond)
@@ -445,13 +437,13 @@ class TestDocumentTemplate(IntegrationTestCase):
 
 	def test_list_view_is_empty_for_normal_desk_user(self):
 		self._make_template("listview-public")
-		with test_user(roles=["Desk User"]) as user, self.set_user(user.name):
+		with self.set_user(DESK_USER):
 			rows = frappe.get_list("Document Template", filters={"reference_doctype": REF_DOCTYPE})
 		self.assertEqual(rows, [])
 
 	def test_list_view_returns_rows_for_system_manager(self):
 		t = self._make_template("listview-sm")
-		with test_user(roles=["System Manager"]) as user, self.set_user(user.name):
+		with self.set_user(SYSTEM_MANAGER):
 			names = [
 				r.name
 				for r in frappe.get_list("Document Template", filters={"reference_doctype": REF_DOCTYPE})
@@ -481,8 +473,7 @@ class TestDocumentTemplate(IntegrationTestCase):
 		t = self._make_template(
 			"perm-noref", reference_doctype=ADMIN_ONLY_DOCTYPE, data=json.dumps({"first_name": "x"})
 		)
-		with test_user(roles=["Desk User"]) as user:
-			self.assertFalse(has_permission(t, user=user.name, ptype="read"))
+		self.assertFalse(has_permission(t, user=DESK_USER, ptype="read"))
 
 	def test_has_permission_template_manager_without_create_on_ref_doctype_is_denied(self):
 		"""``has_permission`` must return ``False`` for a Template Manager when they
@@ -499,15 +490,13 @@ class TestDocumentTemplate(IntegrationTestCase):
 
 	def test_has_permission_create_allowed_with_ref_create_perm(self):
 		t = self._make_template("perm-create")
-		with test_user(roles=["Desk User"]) as user:
-			self.assertTrue(has_permission(t, user=user.name, ptype="create"))
+		self.assertTrue(has_permission(t, user=DESK_USER, ptype="create"))
 
 	def test_has_permission_owner_full_access(self):
-		with test_user(roles=["Desk User"]) as user:
-			t = self._make_template("perm-own", private=1, owner=user.name)
-			for ptype in ("read", "write", "delete"):
-				with self.subTest(ptype=ptype):
-					self.assertTrue(has_permission(t, user=user.name, ptype=ptype))
+		t = self._make_template("perm-own", private=1, owner=DESK_USER)
+		for ptype in ("read", "write", "delete"):
+			with self.subTest(ptype=ptype):
+				self.assertTrue(has_permission(t, user=DESK_USER, ptype=ptype))
 
 	def test_has_permission_other_user_cannot_access_private(self):
 		with test_user(roles=["Desk User"]) as owner_user, test_user(roles=["Desk User"]) as other:

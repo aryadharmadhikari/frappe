@@ -2,9 +2,9 @@
 # License: MIT. See LICENSE
 import frappe
 from frappe.core.doctype.user.test_user import test_user
-from frappe.core.doctype.user_permission.test_user_permission import create_user
 from frappe.email.doctype.email_template.email_template import get_email_template, get_email_templates
 from frappe.tests import IntegrationTestCase
+from frappe.tests.baseline import DESK_USER
 
 
 class TestEmailTemplate(IntegrationTestCase):
@@ -20,9 +20,8 @@ class TestEmailTemplate(IntegrationTestCase):
 			subject="Hello {{ name }}",
 			response="Hi {{ name }}",
 		).insert(set_name="_Test Text Email Template")
-		user = create_user("email_template_reader@example.com", "Desk User")
 
-		with self.set_user(user.name):
+		with self.set_user(DESK_USER):
 			html = get_email_template(html_template.name, {"name": "test@example.com"})
 			text = get_email_template(text_template.name, {"name": "test@example.com"})
 
@@ -40,5 +39,5 @@ class TestEmailTemplate(IntegrationTestCase):
 		with test_user(roles=[]) as user, self.set_user(user.name):
 			self.assertRaises(frappe.PermissionError, get_email_templates, *args)
 
-		with test_user(roles=["Desk User"]) as user, self.set_user(user.name):
-			self.assertEqual(get_email_templates(*args), ((template.name, "ToDo"),))
+		with self.set_user(DESK_USER):
+			self.assertEqual(list(get_email_templates(*args)), [(template.name, "ToDo")])

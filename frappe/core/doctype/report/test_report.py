@@ -13,6 +13,7 @@ from frappe.desk.query_report import add_total_row, run, save_report
 from frappe.desk.reportview import delete_report
 from frappe.desk.reportview import save_report as _save_report
 from frappe.tests import IntegrationTestCase
+from frappe.tests.baseline import SYSTEM_MANAGER, WEBSITE_MANAGER
 
 EXTRA_TEST_RECORD_DEPENDENCIES = ["User"]
 
@@ -195,8 +196,6 @@ class TestReport(IntegrationTestCase):
 		)
 
 	def test_saved_report_with_multiple_group_by_runs_as_user(self):
-		user = create_user("test_report_group_by@example.com", "System Manager")
-
 		def save(name, group_by, fields):
 			settings = {
 				"filters": [],
@@ -206,7 +205,7 @@ class TestReport(IntegrationTestCase):
 			}
 			return frappe.get_doc("Report", _save_report(name, "User", json.dumps(settings)))
 
-		with self.set_user(user.name):
+		with self.set_user(SYSTEM_MANAGER):
 			report = save(
 				"Test Multi Group By",
 				{
@@ -372,8 +371,7 @@ class TestReport(IntegrationTestCase):
 			).insert()
 
 			# Check for PermissionError
-			create_user("test_report_owner@example.com", "Website Manager")
-			frappe.set_user("test_report_owner@example.com")
+			frappe.set_user(WEBSITE_MANAGER)
 			self.assertRaises(frappe.PermissionError, delete_report, report.name)
 
 			# Check for Report Type
@@ -838,10 +836,9 @@ result = [
 				}
 			).insert(ignore_permissions=True)
 
-			unpermitted = create_user("test_read_blocked@example.com", "Website Manager")
 			permitted = create_user("test_read_allowed@example.com", role)
 
-			with self.set_user(unpermitted.email):
+			with self.set_user(WEBSITE_MANAGER):
 				with self.assertRaises(frappe.PermissionError):
 					frappe.get_doc("Report", report_name, check_permission=True)
 
@@ -873,10 +870,9 @@ result = [
 				}
 			).insert(ignore_permissions=True)
 
-			unpermitted = create_user("test_list_blocked@example.com", "Website Manager")
 			permitted = create_user("test_list_allowed@example.com", role)
 
-			with self.set_user(unpermitted.email):
+			with self.set_user(WEBSITE_MANAGER):
 				results = frappe.get_list("Report", filters={"name": report_name}, fields=["name", "query"])
 				self.assertEqual(results, [])
 

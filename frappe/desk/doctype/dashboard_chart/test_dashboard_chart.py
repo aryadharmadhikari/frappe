@@ -13,6 +13,7 @@ from frappe.core.doctype.doctype.test_doctype import new_doctype
 from frappe.core.doctype.user.test_user import test_user
 from frappe.desk.doctype.dashboard_chart.dashboard_chart import create_dashboard_chart, get
 from frappe.tests import IntegrationTestCase
+from frappe.tests.baseline import DESK_USER
 from frappe.utils import formatdate, get_first_day, get_last_day, getdate, now_datetime
 from frappe.utils.dateutils import get_period, get_period_ending
 from frappe.utils.logging import connection_for
@@ -446,7 +447,7 @@ class TestDashboardChart(IntegrationTestCase):
 			"roles": [{"role": "System Manager"}],
 		}
 
-		with test_user(roles=["Desk User"]) as user, self.set_user(user.name):
+		with self.set_user(DESK_USER):
 			chart = create_dashboard_chart(args)
 		self.addCleanup(frappe.delete_doc, "Dashboard Chart", chart.name, force=True)
 		self.assertEqual((chart.is_public, len(chart.roles)), (0, 0))

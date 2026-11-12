@@ -7,7 +7,6 @@ import tempfile
 from unittest.mock import patch
 
 import frappe
-from frappe.core.doctype.user_permission.test_user_permission import create_user
 from frappe.desk.doctype.kanban_board import kanban_board as kb
 from frappe.desk.doctype.kanban_board.kanban_board import (
 	get_kanban_board_data,
@@ -17,6 +16,7 @@ from frappe.desk.doctype.kanban_board.kanban_board import (
 	update_order_for_single_card,
 )
 from frappe.tests import IntegrationTestCase
+from frappe.tests.baseline import DESK_USER
 
 
 def _decompress_kanban_cards(cards):
@@ -161,11 +161,10 @@ class TestKanbanBoard(IntegrationTestCase):
 	def test_update_order_keeps_value_changed_outside_board(self):
 		frappe.db.set_value("Kanban Board", self.board_name, "private", 0)
 		self.addCleanup(frappe.db.set_value, "Kanban Board", self.board_name, "private", 1)
-		user = create_user("kanban_order_user@example.com", "Desk User")
-		frappe.db.set_value("ToDo", self.todos[0], {"allocated_to": user.name, "status": "Closed"})
+		frappe.db.set_value("ToDo", self.todos[0], {"allocated_to": DESK_USER, "status": "Closed"})
 		self.addCleanup(frappe.db.set_value, "ToDo", self.todos[0], "allocated_to", None)
 
-		with self.set_user(user.name):
+		with self.set_user(DESK_USER):
 			board, updated = update_order(
 				self.board_name,
 				frappe.as_json({"Open": self.todos[:3], "Closed": self.todos[3:]}),
@@ -384,11 +383,10 @@ class TestKanbanBoard(IntegrationTestCase):
 		self.addCleanup(frappe.db.set_value, "Kanban Board", self.board_name, "private", 1)
 
 		# A user without a ToDo role only sees the ToDos allocated to them.
-		user = create_user("kanban_lane_reader@example.com", "Desk User")
-		frappe.db.set_value("ToDo", self.todos[0], "allocated_to", user.name)
+		frappe.db.set_value("ToDo", self.todos[0], "allocated_to", DESK_USER)
 		self.addCleanup(frappe.db.set_value, "ToDo", self.todos[0], "allocated_to", None)
 
-		with self.set_user(user.name):
+		with self.set_user(DESK_USER):
 			res = get_kanban_group_values(self.board_name, "priority")
 			res_assign = get_kanban_group_values(self.board_name, "_assign")
 
@@ -399,11 +397,10 @@ class TestKanbanBoard(IntegrationTestCase):
 	def test_get_kanban_column_page_respects_permissions(self):
 		frappe.db.set_value("Kanban Board", self.board_name, "private", 0)
 		self.addCleanup(frappe.db.set_value, "Kanban Board", self.board_name, "private", 1)
-		user = create_user("kanban_lane_reader@example.com", "Desk User")
-		frappe.db.set_value("ToDo", self.todos[0], "allocated_to", user.name)
+		frappe.db.set_value("ToDo", self.todos[0], "allocated_to", DESK_USER)
 		self.addCleanup(frappe.db.set_value, "ToDo", self.todos[0], "allocated_to", None)
 
-		with self.set_user(user.name):
+		with self.set_user(DESK_USER):
 			frappe.local.form_dict = frappe._dict(
 				{
 					"board_name": self.board_name,

@@ -2,9 +2,9 @@
 # License: MIT. See LICENSE
 import frappe
 from frappe.cache_manager import clear_defaults_cache
-from frappe.core.doctype.user_permission.test_user_permission import create_user
 from frappe.defaults import *
 from frappe.tests import IntegrationTestCase
+from frappe.tests.baseline import DESK_USER, WEBSITE_MANAGER
 
 
 class TestDefaults(IntegrationTestCase):
@@ -54,17 +54,16 @@ class TestDefaults(IntegrationTestCase):
 		self.assertEqual(get_user_default("key6"), None)
 
 	def test_user_permission_on_defaults(self):
-		user = create_user("default-language-permissions@example.com", "Desk User")
-		self.addCleanup(frappe.clear_cache, user=user.name)
+		self.addCleanup(frappe.clear_cache, user=DESK_USER)
 		set_global_default("language", "en")
 
-		with self.set_user(user.name):
+		with self.set_user(DESK_USER):
 			self.assertEqual(get_global_default("language"), "en")
 			self.assertEqual(get_user_default("language"), "en")
 			self.assertEqual(get_user_default_as_list("language"), ["en"])
 
 			frappe.get_doc(
-				doctype="User Permission", user=user.name, allow="Language", for_value="en-GB"
+				doctype="User Permission", user=DESK_USER, allow="Language", for_value="en-GB"
 			).insert(ignore_permissions=True)
 
 			self.assertEqual(get_global_default("language"), None)
@@ -72,8 +71,7 @@ class TestDefaults(IntegrationTestCase):
 			self.assertEqual(get_user_default_as_list("language"), [])
 
 	def test_user_permission_defaults(self):
-		user = "user_default_test@example.com"
-		create_user(user, "Website Manager")
+		user = WEBSITE_MANAGER
 		self.addCleanup(frappe.clear_cache, user=user)
 
 		with self.set_user(user):

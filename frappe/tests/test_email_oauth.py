@@ -17,6 +17,7 @@ from frappe.integrations.doctype.connected_app.connected_app import (
 from frappe.integrations.frappe_providers import email_oauth
 from frappe.permissions import add_user_permission
 from frappe.tests import IntegrationTestCase
+from frappe.tests.baseline import WEBSITE_MANAGER
 from frappe.tests.utils import wait_for_job
 from frappe.utils import set_request
 
@@ -265,7 +266,7 @@ class TestOneClickServices(IntegrationTestCase):
 	def test_lists_nothing_off_frappe_cloud_or_without_create_permission(self) -> None:
 		with patch.dict(frappe.conf, {key: None for key in V2}):
 			self.assertEqual(email_oauth.get_one_click_services(), {})
-		with self.set_user(create_user("email-oauth-reader@example.com", "Website Manager").name):
+		with self.set_user(WEBSITE_MANAGER):
 			self.assertEqual(email_oauth.get_one_click_services(), {})
 		self.pilot.assert_not_called()
 

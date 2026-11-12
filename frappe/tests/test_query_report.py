@@ -15,6 +15,7 @@ from frappe.desk.query_report import (
 	run,
 )
 from frappe.tests import IntegrationTestCase
+from frappe.tests.baseline import SYSTEM_MANAGER, WEBSITE_MANAGER
 from frappe.tests.utils import cleanup_committed_test_data
 from frappe.utils.xlsxutils import XLSXMetadata, XLSXStyleBuilder, make_xlsx
 
@@ -300,10 +301,7 @@ class TestQueryReport(IntegrationTestCase):
 			run(report.name, filters)
 
 	def test_get_script_quotes_report_name(self):
-		from frappe.core.doctype.user_permission.test_user_permission import create_user
-
 		frappe.set_user("Administrator")
-		user = create_user("test_report_script_reader@example.com", "Website Manager")
 		report = frappe.get_doc(
 			{
 				"doctype": "Report",
@@ -316,7 +314,7 @@ class TestQueryReport(IntegrationTestCase):
 			}
 		).insert(ignore_permissions=True)
 
-		with self.set_user(user.name):
+		with self.set_user(WEBSITE_MANAGER):
 			script = get_script(report.name)["script"]
 
 		self.assertEqual(script, f'frappe.query_reports["{report.name}"]={{}}')
@@ -324,14 +322,11 @@ class TestQueryReport(IntegrationTestCase):
 	def test_get_script_reports_a_python_formatter(self):
 		from unittest.mock import patch
 
-		from frappe.core.doctype.user_permission.test_user_permission import create_user
-
 		frappe.set_user("Administrator")
-		user = create_user("test_report_formatter_reader@example.com")
 
 		with (
 			patch("frappe.desk.report.todo.todo.formatter", lambda *args: None, create=True),
-			self.set_user(user.name),
+			self.set_user(SYSTEM_MANAGER),
 		):
 			self.assertTrue(get_script("ToDo")["has_python_formatter"])
 
@@ -1038,10 +1033,8 @@ data = columns, result
 			report.save()
 
 	def make_filtered_report(self):
-		from frappe.core.doctype.user_permission.test_user_permission import create_user
-
 		frappe.set_user("Administrator")
-		user = create_user("test_report_filters@example.com", "Website Manager").name
+		user = WEBSITE_MANAGER
 		report = frappe.get_doc(
 			{
 				"doctype": "Report",
