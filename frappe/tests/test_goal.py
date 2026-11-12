@@ -5,7 +5,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.tests.test_db_query import setup_patched_blog_post, setup_test_user
 from frappe.tests.test_helpers import setup_for_tests
-from frappe.tests.utils import make_test_objects
+from frappe.tests.utils import load_test_records_for
 from frappe.utils import format_date, today
 from frappe.utils.goal import get_monthly_goal_graph_data, get_monthly_results
 
@@ -13,12 +13,16 @@ EXTRA_TEST_RECORD_DEPENDENCIES = ["User"]
 
 
 class TestGoal(IntegrationTestCase):
-	def setUp(self):
-		make_test_objects("Event", reset=True)
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.events = {row["subject"]: row for row in load_test_records_for("Event")["Event"]}
 
-	def tearDown(self):
-		frappe.db.delete("Event")
-		super().tearDown()
+	def make_event(self, subject):
+		return frappe.copy_doc(self.events[subject]).insert()
+
+	def make_private_events(self):
+		return [self.make_event(subject).name for subject in ("_Test Event 2", "_Test Event 3")]
 
 	def test_get_monthly_results(self):
 		"""Test monthly aggregation values of a field"""
@@ -26,7 +30,7 @@ class TestGoal(IntegrationTestCase):
 			"Event",
 			"subject",
 			"creation",
-			filters={"event_type": "Private"},
+			filters={"name": ["in", self.make_private_events()], "event_type": "Private"},
 			aggregation="count",
 		)
 
@@ -35,14 +39,15 @@ class TestGoal(IntegrationTestCase):
 	def test_get_monthly_results_sum(self):
 		"""sum/avg must aggregate the column, not a string literal -- the literal form
 		(`sum('send_reminder')`) sums to 0 on MariaDB and errors on Postgres."""
-		for name in frappe.get_all("Event", filters={"event_type": "Private"}, pluck="name"):
+		names = self.make_private_events()
+		for name in names:
 			frappe.db.set_value("Event", name, "send_reminder", 1)
 
 		result_dict = get_monthly_results(
 			"Event",
 			"send_reminder",
 			"creation",
-			filters={"event_type": "Private"},
+			filters={"name": ["in", names], "event_type": "Private"},
 			aggregation="sum",
 		)
 
@@ -60,7 +65,7 @@ class TestGoal(IntegrationTestCase):
 
 	def test_get_monthly_goal_graph_data(self):
 		"""Test for accurate values in graph data (based on test_get_monthly_results)"""
-		docname = frappe.get_list("Event", filters={"subject": ["=", "_Test Event 1"]})[0]["name"]
+		docname = self.make_event("_Test Event 1").name
 		frappe.db.set_value("Event", docname, "description", 1)
 		data = get_monthly_goal_graph_data(
 			"Test",
@@ -73,7 +78,7 @@ class TestGoal(IntegrationTestCase):
 			"",
 			"description",
 			"creation",
-			filters={"starts_on": "2014-01-01"},
+			filters={"name": docname, "starts_on": "2014-01-01"},
 			aggregation="count",
 		)
 		self.assertEqual(float(data["data"]["datasets"][0]["values"][-1]), 1)
@@ -81,7 +86,7 @@ class TestGoal(IntegrationTestCase):
 		self.assertIsNone(data["currency"])
 
 	def test_monthly_goal_graph_data_for_a_standard_field(self):
-		docname = frappe.get_list("Event", filters={"subject": ["=", "_Test Event 1"]})[0]["name"]
+		docname = self.make_event("_Test Event 1").name
 		data = get_monthly_goal_graph_data(
 			"Test",
 			"Event",
@@ -93,7 +98,7 @@ class TestGoal(IntegrationTestCase):
 			"",
 			"description",
 			"creation",
-			filters={"starts_on": "2014-01-01"},
+			filters={"name": docname, "starts_on": "2014-01-01"},
 			aggregation="count",
 		)
 		self.assertIsNone(data["fieldtype"])

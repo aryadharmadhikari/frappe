@@ -10,7 +10,8 @@ from frappe.core.doctype.version.version import (
 	get_diff,
 )
 from frappe.tests import IntegrationTestCase, UnitTestCase
-from frappe.tests.utils import make_test_objects
+from frappe.tests.utils import load_test_records_for
+from frappe.utils import get_datetime
 
 
 class TestHTMLDiff(UnitTestCase):
@@ -134,10 +135,14 @@ class TestVersion(IntegrationTestCase):
 		version.onload()
 		self.assertIsNone(version.get_onload().get("html_diffs"))
 
+	def make_event_for_diff(self):
+		event = frappe.get_doc(load_test_records_for("Event")["Event"][0])
+		event.starts_on = get_datetime(event.starts_on)
+		return event
+
 	def test_get_diff(self):
 		frappe.set_user("Administrator")
-		test_records = make_test_objects("Event", reset=True)
-		old_doc = frappe.get_doc("Event", test_records[0])
+		old_doc = self.make_event_for_diff()
 		new_doc = copy.deepcopy(old_doc)
 
 		old_doc.color = None
@@ -169,8 +174,7 @@ class TestVersion(IntegrationTestCase):
 	def test_get_diff_skips_ignore_versioning_field(self):
 		"""Test fields with ignore_versioning are left out of the diff."""
 		frappe.set_user("Administrator")
-		test_records = make_test_objects("Event", reset=True)
-		old_doc = frappe.get_doc("Event", test_records[0])
+		old_doc = self.make_event_for_diff()
 		new_doc = copy.deepcopy(old_doc)
 
 		self.set_ignore_versioning(new_doc.meta, "color")
@@ -194,8 +198,7 @@ class TestVersion(IntegrationTestCase):
 	def test_get_diff_skips_ignore_versioning_field_in_child_rows(self):
 		"""Test ignored fields are left out of added and removed child rows."""
 		frappe.set_user("Administrator")
-		test_records = make_test_objects("Event", reset=True)
-		doc_without_row = frappe.get_doc("Event", test_records[0])
+		doc_without_row = self.make_event_for_diff()
 		doc_with_row = copy.deepcopy(doc_without_row)
 
 		self.set_ignore_versioning(frappe.get_meta("Event Participants"), "email")
