@@ -17,6 +17,7 @@ from frappe.desk.doctype.dock.dock import (
 	destination,
 	dock_key,
 	docked_apps,
+	drop_dock_caches,
 	get_app_dock,
 	get_app_dock_layer,
 	get_app_entry_set,
@@ -47,6 +48,7 @@ from frappe.desk.doctype.sidebar.test_sidebar import (
 )
 from frappe.model.sync import remove_orphan_entities
 from frappe.tests import IntegrationTestCase
+from frappe.tests.utils import cleanup_committed_test_data
 
 USER = "test-dock-prefs@example.com"
 
@@ -353,12 +355,21 @@ class DockTestCase(IntegrationTestCase):
 	no opinion about anybody else's.
 	"""
 
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		with ExitStack() as fixtures:
+			for module in TRIO:
+				fixtures.enter_context(sidebarless_module(module))
+			fixtures.enter_context(shipped_dock({APP: [sidebar(module) for module in TRIO]}))
+			cls.addClassCleanup(cleanup_committed_test_data, fixtures.pop_all().close)
+			frappe.db.commit()
+
 	def setUp(self):
 		super().setUp()
 		frappe.set_user("Administrator")
-		for module in TRIO:
-			self.enterContext(sidebarless_module(module))
-		self.enterContext(shipped_dock({APP: [sidebar(module) for module in TRIO]}))
+		self.addCleanup(frappe.set_user, "Administrator")
+		frappe.db.after_rollback.add(lambda: drop_dock_caches(None))
 
 
 class TestDockPreferences(DockTestCase):
@@ -377,12 +388,6 @@ class TestDockPreferences(DockTestCase):
 				}
 			).insert()
 		frappe.set_user(USER)
-
-	def tearDown(self):
-		frappe.set_user("Administrator")
-		clear_arrangements()
-		frappe.delete_doc("User", USER, force=True, ignore_missing=True)
-		super().tearDown()
 
 	def test_order_round_trips(self):
 		save_user_dock(APP, payload(GAMMA, ALPHA, BETA))
@@ -493,13 +498,6 @@ class TestDockSiteLayer(DockTestCase):
 		super().setUp()
 		self.make_user(self.MANAGER, ["Desk User", "Workspace Manager"])
 		self.make_user(self.DESK_USER, ["Desk User"])
-
-	def tearDown(self):
-		frappe.set_user("Administrator")
-		clear_arrangements()
-		for email in (self.MANAGER, self.DESK_USER):
-			frappe.delete_doc("User", email, force=True, ignore_missing=True)
-		super().tearDown()
 
 	def make_user(self, email, roles):
 		if frappe.db.exists("User", email):
@@ -725,12 +723,6 @@ class TestTheAppLayer(DockTestCase):
 					"roles": [{"role": "Desk User"}],
 				}
 			).insert(ignore_permissions=True)
-
-	def tearDown(self):
-		frappe.set_user("Administrator")
-		clear_arrangements()
-		frappe.delete_doc("User", self.USER, force=True, ignore_missing=True)
-		super().tearDown()
 
 	def ship(self, *items, app=None):
 		"""One app's fragment, declared for the length of the `with` block."""
@@ -1036,13 +1028,6 @@ class TestWhatACustomisationMayDo(DockTestCase):
 					}
 				).insert(ignore_permissions=True)
 
-	def tearDown(self):
-		frappe.set_user("Administrator")
-		clear_arrangements()
-		for email in (self.MANAGER, self.PERSON):
-			frappe.delete_doc("User", email, force=True, ignore_missing=True)
-		super().tearDown()
-
 	def make_workspace(self, title, module, roles=None):
 		doc = frappe.get_doc(
 			{
@@ -1280,11 +1265,6 @@ class TestTheRowShape(DockTestCase):
 				}
 			).insert(ignore_permissions=True)
 
-	def tearDown(self):
-		frappe.set_user("Administrator")
-		clear_arrangements()
-		super().tearDown()
-
 	def make_workspace(self, title, module, public=1):
 		doc = frappe.get_doc(
 			{
@@ -1481,12 +1461,6 @@ class TestTheCompanionMount(DockTestCase):
 				}
 			).insert(ignore_permissions=True)
 
-	def tearDown(self):
-		frappe.set_user("Administrator")
-		clear_arrangements()
-		frappe.delete_doc("User", self.USER, force=True, ignore_missing=True)
-		super().tearDown()
-
 	def host_and_companion(self, host_rows=None, companion_rows=None, mount_on=None):
 		return shipped_dock(
 			{
@@ -1631,11 +1605,6 @@ class TestAnAppWithNoDock(DockTestCase):
 					"roles": [{"role": "Desk User"}],
 				}
 			).insert(ignore_permissions=True)
-
-	def tearDown(self):
-		frappe.set_user("Administrator")
-		clear_arrangements()
-		super().tearDown()
 
 	def test_an_app_with_no_record_resolves_to_zero_entries(self):
 		with shipped_dock({self.APP: []}):
