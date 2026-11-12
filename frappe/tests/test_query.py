@@ -1228,23 +1228,14 @@ class TestQuery(IntegrationTestCase):
 	def test_nested_permission(self):
 		"""Test permission on nested doctypes"""
 		frappe.set_user("Administrator")
-		create_nested_doctype()
+		create_nested_doctype(self)
 		create_nested_doctype_records()
 
-		from frappe.permissions import add_user_permission, clear_user_permissions_for_doctype
-
-		clear_user_permissions_for_doctype("Nested DocType")
+		from frappe.permissions import add_user_permission
 
 		# Add user permission for only one root folder
 		add_user_permission("Nested DocType", "Level 1 A", "test2@example.com")
 
-		from frappe.core.page.permission_manager.permission_manager import update
-
-		# To avoid if_owner filter
-		update("Nested DocType", "All", 0, "if_owner", 0)
-
-		test2user = frappe.get_doc("User", "test2@example.com")
-		test2user.add_roles("Blogger")
 		with self.set_user("test2@example.com"):
 			data = frappe.qb.get_query("Nested DocType", ignore_permissions=False).run(as_dict=1)
 
@@ -1254,8 +1245,6 @@ class TestQuery(IntegrationTestCase):
 		# Other nodes should not be accessible
 		self.assertFalse(any(d.name == "Level 1 B" for d in data))
 		self.assertFalse(any(d.name == "Level 2 B" for d in data))
-
-		update("Nested DocType", "All", 0, "if_owner", 1)  # Reset to default
 
 	def test_is_set_is_not_set(self):
 		"""Test is set and is not set filters"""
