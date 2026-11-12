@@ -669,27 +669,22 @@ result = [
 		self.assertEqual(prepared_report_watcher_targets(), [])
 
 	def test_toggle_disabled(self):
-		"""Make sure that authorization is respected."""
-		# Assuming that there will be reports in the system.
-		reports = frappe.get_all(doctype="Report", limit=1)
-		report_name = reports[0]["name"]
-		doc = frappe.get_doc("Report", report_name)
-		status = doc.disabled
+		report = frappe.get_doc(
+			doctype="Report",
+			report_name="Test Report Status Toggle",
+			report_type="Report Builder",
+			ref_doctype="ToDo",
+			is_standard="No",
+			disabled=0,
+		).insert()
 
-		# User has write permission on reports and should pass through
-		frappe.set_user("test@example.com")
-		doc.toggle_disable(not status)
-		doc.reload()
-		self.assertNotEqual(status, doc.disabled)
+		with self.set_user(SYSTEM_MANAGER):
+			report.toggle_disable(True)
+		self.assertTrue(report.reload().disabled)
 
-		# User has no write permission on reports, permission error is expected.
-		frappe.set_user("test1@example.com")
-		doc = frappe.get_doc("Report", report_name)
-		with self.assertRaises(frappe.exceptions.ValidationError):
-			doc.toggle_disable(1)
-
-		# Set user back to administrator
-		frappe.set_user("Administrator")
+		with self.set_user(WEBSITE_MANAGER), self.assertRaises(frappe.ValidationError):
+			report.toggle_disable(False)
+		self.assertTrue(report.reload().disabled)
 
 	def test_default_print_format_accepts_jinja_and_js(self):
 		"""Report print formats may be authored in either templating language."""
