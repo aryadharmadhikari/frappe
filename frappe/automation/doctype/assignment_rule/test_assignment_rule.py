@@ -6,7 +6,8 @@ from unittest.mock import patch
 import frappe
 from frappe.automation.doctype.assignment_rule.assignment_rule import reopen_closed_assignment
 from frappe.tests import IntegrationTestCase
-from frappe.tests.utils import make_test_records
+
+EXTRA_TEST_RECORD_DEPENDENCIES = ["User"]
 
 TEST_DOCTYPE = "Assignment Test"
 
@@ -15,7 +16,6 @@ class TestAutoAssign(IntegrationTestCase):
 	def setUp(self):
 		super().setUp()
 		frappe.set_user("Administrator")
-		make_test_records("User")
 		if not frappe.db.exists("DocType", TEST_DOCTYPE):
 			create_test_doctype(TEST_DOCTYPE)
 		days = [

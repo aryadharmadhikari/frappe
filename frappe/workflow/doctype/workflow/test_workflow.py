@@ -16,15 +16,15 @@ from frappe.model.workflow import (
 	get_workflow_names,
 )
 from frappe.tests import IntegrationTestCase
-from frappe.tests.utils import make_test_records
 from frappe.utils import random_string
+
+EXTRA_TEST_RECORD_DEPENDENCIES = ["User"]
 
 
 class TestWorkflow(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
-		make_test_records("User")
 		cls.enterClassContext(cls.enable_safe_exec())
 
 	def setUp(self):

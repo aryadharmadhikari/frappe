@@ -15,7 +15,6 @@ from frappe.integrations.oauth2 import encode_params, get_openid_configuration, 
 from frappe.oauth import OAuthWebRequestValidator
 from frappe.tests import IntegrationTestCase
 from frappe.tests.test_api import get_test_client, make_request, suppress_stdout
-from frappe.tests.utils import make_test_records
 from frappe.tests.utils.test_capabilities import TestService, requires_test_service
 from frappe.utils.oauth import build_oauth_url
 
@@ -25,6 +24,9 @@ if TYPE_CHECKING:
 
 PKCE_CODE_VERIFIER = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
 PKCE_CODE_CHALLENGE = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+
+
+EXTRA_TEST_RECORD_DEPENDENCIES = ["User"]
 
 
 class FrappeRequestTestCase(IntegrationTestCase):
@@ -76,7 +78,6 @@ class TestOAuth20(FrappeRequestTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
-		make_test_records("User")
 
 		cls.form_header = {"content-type": "application/x-www-form-urlencoded"}
 		cls.scope = "all openid"
