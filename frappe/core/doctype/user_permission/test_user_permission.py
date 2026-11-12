@@ -253,22 +253,18 @@ class TestUserPermissionSchema(IntegrationTestCase):
 		"""Test User Perm impact on frappe.new_doc. with *field* default value"""
 		frappe.set_user("Administrator")
 
-		# make a doctype "Doc A" with 'doctype' link field and default value ToDo
-		if not frappe.db.exists("DocType", "Doc A"):
-			doc = new_doctype(
-				"Doc A",
-				fields=[
-					{
-						"label": "DocType",
-						"fieldname": "doc",
-						"fieldtype": "Link",
-						"options": "DocType",
-						"default": "ToDo",
-					}
-				],
-				unique=0,
-			)
-			insert_test_doctype(self, doc)
+		doc = new_doctype(
+			fields=[
+				{
+					"label": "DocType",
+					"fieldname": "doc",
+					"fieldtype": "Link",
+					"options": "DocType",
+					"default": "ToDo",
+				}
+			],
+		)
+		doctype = insert_test_doctype(self, doc).name
 
 		user = create_user("new_doc_test@example.com", "Blogger")
 
@@ -276,10 +272,10 @@ class TestUserPermissionSchema(IntegrationTestCase):
 		add_user_permissions(get_params(user, "DocType", "ToDo", applicable=["Assignment Rule"]))
 		frappe.set_user("new_doc_test@example.com")
 
-		new_doc = frappe.new_doc("Doc A")
+		new_doc = frappe.new_doc(doctype)
 
 		# User perm is created on ToDo but for doctype Assignment Rule only
-		# it should not have impact on Doc A
+		# it should not have impact on this DocType
 		self.assertEqual(new_doc.doc, "ToDo")
 
 		frappe.set_user("Administrator")
@@ -294,21 +290,17 @@ class TestUserPermissionSchema(IntegrationTestCase):
 
 		frappe.set_user("Administrator")
 
-		# make a doctype "Doc A" with 'doctype' link field
-		if not frappe.db.exists("DocType", "Doc A"):
-			doc = new_doctype(
-				"Doc A",
-				fields=[
-					{
-						"label": "DocType",
-						"fieldname": "doc",
-						"fieldtype": "Link",
-						"options": "DocType",
-					}
-				],
-				unique=0,
-			)
-			insert_test_doctype(self, doc)
+		doc = new_doctype(
+			fields=[
+				{
+					"label": "DocType",
+					"fieldname": "doc",
+					"fieldtype": "Link",
+					"options": "DocType",
+				}
+			],
+		)
+		doctype = insert_test_doctype(self, doc).name
 
 		user = create_user("user_default_test@example.com", "Blogger")
 
@@ -325,10 +317,10 @@ class TestUserPermissionSchema(IntegrationTestCase):
 		frappe.set_user("user_default_test@example.com")
 		set_session_default_values({"doc": "ToDo"})
 
-		new_doc = frappe.new_doc("Doc A")
+		new_doc = frappe.new_doc(doctype)
 
 		# User perm is created on ToDo but for doctype Assignment Rule only
-		# it should not have impact on Doc A
+		# it should not have impact on this DocType
 		self.assertEqual(new_doc.doc, "ToDo")
 
 		frappe.set_user("Administrator")

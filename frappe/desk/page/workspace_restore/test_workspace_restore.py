@@ -224,6 +224,7 @@ class TestWorkspaceRestore(IntegrationTestCase):
 
 	def setUp(self):
 		frappe.set_user("Administrator")
+		self.enterContext(patch.dict(frappe.conf, {"developer_mode": 0}))
 		self.addCleanup(frappe.set_user, "Administrator")
 		# get_workspaces is request-cached and no request ends inside a test run
 		self.clear_request_cache()
