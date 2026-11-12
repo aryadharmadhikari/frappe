@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 from frappe.core.doctype.doctype.test_doctype import insert_test_doctype, new_doctype
+from frappe.core.doctype.user.test_user import test_user
 from frappe.core.page.permission_manager.permission_manager import add, reset, update
 from frappe.custom.doctype.property_setter.property_setter import make_property_setter
 from frappe.database.utils import DefaultOrderBy
@@ -13,7 +14,7 @@ from frappe.desk.reportview import get_filters_cond
 from frappe.handler import execute_cmd
 from frappe.model import get_permitted_fields
 from frappe.model.db_query import DatabaseQuery, get_between_date_filter
-from frappe.permissions import add_user_permission, clear_user_permissions_for_doctype
+from frappe.permissions import add_user_permission
 from frappe.query_builder import Field
 from frappe.tests import IntegrationTestCase
 from frappe.tests.test_helpers import setup_for_tests
@@ -437,11 +438,8 @@ class TestDBQuery(IntegrationTestCase):
 			self.assertEqual(result[0].child_value, "Child")
 
 	def test_build_match_conditions(self):
-		clear_user_permissions_for_doctype("Test Blog Post", "test2@example.com")
-
-		test2user = frappe.get_doc("User", "test2@example.com")
-		test2user.add_roles("Blogger")
-		frappe.set_user("test2@example.com")
+		user = self.enterContext(test_user(roles=["Blogger"]))
+		self.enterContext(self.set_user(user.name))
 
 		# this will get match conditions for Blog Post
 		build_match_conditions = DatabaseQuery("Test Blog Post").build_match_conditions
@@ -452,8 +450,8 @@ class TestDBQuery(IntegrationTestCase):
 		# get as conditions
 		self.assertEqual(build_match_conditions(as_condition=True), "")
 
-		add_user_permission("Test Blog Post", "_Test Blog Post", "test2@example.com", True)
-		add_user_permission("Test Blog Post", "_Test Blog Post 1", "test2@example.com", True)
+		add_user_permission("Test Blog Post", "_Test Blog Post", user.name, True)
+		add_user_permission("Test Blog Post", "_Test Blog Post 1", user.name, True)
 
 		# After applying user permission
 		# get as filters
@@ -468,8 +466,6 @@ class TestDBQuery(IntegrationTestCase):
 			assertion_string = """(((ifnull(cast(`tabTest Blog Post`.`name` as varchar), '')='' or cast(`tabTest Blog Post`.`name` as varchar) in ('_Test Blog Post 1', '_Test Blog Post'))))"""
 
 		self.assertEqual(build_match_conditions(as_condition=True), assertion_string)
-
-		frappe.set_user("Administrator")
 
 	def test_fields(self):
 		self.assertTrue(
@@ -1365,7 +1361,7 @@ class TestDBQuery(IntegrationTestCase):
 		``frappe.db.get_values`` and ``get_query(..., ignore_permissions=True)``
 		intentionally do not mask.
 		"""
-		from frappe.core.doctype.doctype.test_doctype import insert_test_doctype, new_doctype
+		from frappe.core.doctype.doctype.test_doctype import new_doctype
 
 		frappe.delete_doc_if_exists("DocType", "Test Masked Pluck")
 		new_doctype(
@@ -1431,7 +1427,7 @@ class TestDBQuery(IntegrationTestCase):
 		"""
 		from pypika import functions as fn
 
-		from frappe.core.doctype.doctype.test_doctype import insert_test_doctype, new_doctype
+		from frappe.core.doctype.doctype.test_doctype import new_doctype
 
 		frappe.delete_doc_if_exists("DocType", "Test Masked Pluck Wrapped")
 		new_doctype(
@@ -1478,7 +1474,7 @@ class TestDBQuery(IntegrationTestCase):
 		frappe.set_user("Administrator")
 
 	def test_cast_name(self):
-		from frappe.core.doctype.doctype.test_doctype import insert_test_doctype, new_doctype
+		from frappe.core.doctype.doctype.test_doctype import new_doctype
 
 		frappe.delete_doc_if_exists("DocType", "autoinc_dt_test")
 		dt = new_doctype("autoinc_dt_test", autoname="autoincrement").insert(ignore_permissions=True)
@@ -1509,7 +1505,7 @@ class TestDBQuery(IntegrationTestCase):
 		dt.delete(ignore_permissions=True)
 
 	def test_fieldname_starting_with_int(self):
-		from frappe.core.doctype.doctype.test_doctype import insert_test_doctype, new_doctype
+		from frappe.core.doctype.doctype.test_doctype import new_doctype
 
 		frappe.delete_doc_if_exists("DocType", "dt_with_int_named_fieldname")
 		frappe.delete_doc_if_exists("DocType", "table_dt")

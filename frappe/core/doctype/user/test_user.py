@@ -700,7 +700,7 @@ class TestUser(IntegrationTestCase):
 			finally:
 				frappe.local.response = response
 
-	@IntegrationTestCase.change_settings("System Settings", password_reset_limit=6)
+	@IntegrationTestCase.change_settings("System Settings", commit=True, password_reset_limit=6)
 	def test_reset_password(self):
 		from frappe.auth import CookieManager, LoginManager
 		from frappe.utils import set_request
@@ -708,15 +708,17 @@ class TestUser(IntegrationTestCase):
 		old_password = "Eastern_43A1W"
 		new_password = "easy_password"
 
+		desk_user = self.enterContext(test_user(roles=["Desk User"], new_password=old_password, commit=True))
+		website_user = self.enterContext(test_user(roles=[], new_password=old_password, commit=True))
+
 		set_request(path="/random")
 		frappe.local.cookie_manager = CookieManager()
 		frappe.local.login_manager = LoginManager()
 		# used by rate limiter when calling reset_password
 		frappe.local.request_ip = "127.0.0.69"
 
-		frappe.set_user("testpassword@example.com")
-		test_user = frappe.get_doc("User", "testpassword@example.com")
-		key = self.reset_password(test_user)
+		frappe.set_user(desk_user.name)
+		key = self.reset_password(desk_user)
 		self.assertEqual(update_password(new_password, key=key), "/desk")
 		self.assertEqual(
 			update_password(new_password, key="wrong_key"),
@@ -743,11 +745,11 @@ class TestUser(IntegrationTestCase):
 				update_password,
 				new_password,
 				0,
-				test_user.reset_password_key,
+				desk_user.reset_password_key,
 			)
 
 		# test redirect URL for website users
-		frappe.set_user("test2@example.com")
+		frappe.set_user(website_user.name)
 		self.assertEqual(update_password(new_password, old_password=old_password), "me")
 		# reset password
 		update_password(old_password, old_password=new_password)
@@ -761,9 +763,7 @@ class TestUser(IntegrationTestCase):
 			mock_q.message = "Subject: Test\n\nDear User, here is your link"
 			sendmail.return_value = mock_q
 			frappe.clear_messages()
-			test_user = frappe.get_doc("User", "test2@example.com")
-			self.assertEqual(reset_password(user="test2@example.com"), None)
-			test_user.reload()
+			self.assertEqual(reset_password(user=website_user.name), None)
 			link = sendmail.call_args_list[0].kwargs["args"]["link"]
 			key = parse_qs(urlparse(link).query)["key"][0]
 			self.assertEqual(update_password(new_password, key=key), "me")
@@ -774,7 +774,7 @@ class TestUser(IntegrationTestCase):
 			)
 
 		sendmail.assert_called_once()
-		self.assertEqual(sendmail.call_args[1]["recipients"], "test2@example.com")
+		self.assertEqual(sendmail.call_args[1]["recipients"], website_user.name)
 
 		# Constant-response guarantee: every path — existing user, Administrator,
 		# and non-existent user — must return None AND enqueue the same generic
@@ -782,7 +782,7 @@ class TestUser(IntegrationTestCase):
 		_GENERIC_MSG = "If this email is registered with us, we have sent password reset instructions to it. Please check your inbox."
 
 		frappe.clear_messages()
-		self.assertIsNone(reset_password(user="test2@example.com"))
+		self.assertIsNone(reset_password(user=website_user.name))
 		self.assertEqual(frappe.message_log[0].get("message"), _GENERIC_MSG)
 
 		frappe.clear_messages()
