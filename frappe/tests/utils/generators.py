@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 import frappe
 from frappe.model.naming import revert_series_if_last
 from frappe.modules import get_doctype_module, get_module_path, load_doctype_module
+from frappe.tests.baseline import make_master_records
 
 if TYPE_CHECKING:
 	from frappe.model.document import Document
@@ -458,7 +459,6 @@ def make_test_baseline(app: str) -> None:
 	manager = test_record_manager_instance
 	original = {doctype: records.copy() for doctype, records in frappe.local.test_objects.items()}
 	manager.pending = []
-	from frappe.tests.baseline import make_master_records
 
 	try:
 		for doctype in doctypes:

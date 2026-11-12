@@ -11,6 +11,7 @@ from unittest.mock import patch
 import frappe
 from frappe.testing.result import TestResult as FrappeTestResult
 from frappe.tests import IntegrationTestCase, UnitTestCase
+from frappe.tests.baseline import DESK_USER, SYSTEM_MANAGER, WEBSITE_MANAGER, WORKSPACE_MANAGER
 from frappe.tests.utils import cleanup_committed_test_data, generators
 from frappe.tests.utils.generators import get_missing_records_doctypes, get_modules
 from frappe.utils.data import now_datetime
@@ -112,18 +113,29 @@ class TestTestUtils(IntegrationTestCase):
 		self.assertFalse(frappe.db.exists("ToDo", {"description": description}))
 		self.assertFalse(manager.log_file.exists())
 
+		actors = [DESK_USER, SYSTEM_MANAGER, WEBSITE_MANAGER, WORKSPACE_MANAGER]
+
+		def actor_creation_times():
+			return frappe.db.get_all(
+				"User", filters={"name": ["in", actors]}, fields=["name", "creation"], order_by="name"
+			)
+
 		with patch.object(generators, "make_test_records", load_fixture):
 			generators.make_test_baseline("frappe")
 			journal = manager.log_file.read_text()
+			baseline_users = actor_creation_times()
 			fixture_name = frappe.db.get_value("ToDo", {"description": description})
 			frappe.local.test_objects.clear()
 			manager._log = None
 			generators.make_test_baseline("frappe")
 		self.assertEqual(manager.log_file.read_text(), journal)
+		self.assertCountEqual((user.name for user in baseline_users), actors)
+		self.assertEqual(actor_creation_times(), baseline_users)
 		self.assertEqual(frappe.db.count("ToDo", {"description": description}), 1)
 
 		class BaselineCase(IntegrationTestCase):
 			def runTest(self):
+				frappe.db.set_value("User", DESK_USER, "enabled", 0)
 				frappe.db.delete("ToDo", {"name": fixture_name})
 				frappe.get_doc(doctype="ToDo", description=description).insert()
 
@@ -131,6 +143,7 @@ class TestTestUtils(IntegrationTestCase):
 			result = BaselineCase().run(TestResult())
 		self.assertTrue(result.wasSuccessful(), result.errors + result.failures)
 		with self.secondary_connection():
+			self.assertTrue(frappe.db.get_value("User", DESK_USER, "enabled"))
 			self.assertEqual(frappe.db.get_value("ToDo", fixture_name, "description"), description)
 			self.assertEqual(frappe.db.count("ToDo", {"description": description}), 1)
 

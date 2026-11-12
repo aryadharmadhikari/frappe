@@ -13,7 +13,6 @@ def make_master_records() -> None:
 	"""Create shared reference data and permission actors without committing."""
 	for doctype, field, names in (
 		("Gender", "gender", ("Female", "Male")),
-		("Salutation", "salutation", ("Mr", "Mrs")),
 		("Role", "role_name", ("Blogger",)),
 	):
 		for name in names:
