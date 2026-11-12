@@ -2,8 +2,11 @@
 # See license.txt
 
 import frappe
+from frappe.core.doctype.permission_type.permission_type import CUSTOM_FIELD_TARGET
 from frappe.permissions import update_permission_property
 from frappe.tests import IntegrationTestCase
+from frappe.tests.baseline import WEBSITE_MANAGER
+from frappe.tests.utils import cleanup_committed_test_data
 
 # On IntegrationTestCase, the doctype test records and all
 # link-field test record dependencies are recursively loaded
@@ -24,28 +27,13 @@ class IntegrationTestPermissionType(IntegrationTestCase):
 		doc_type = "Web Page"
 		ptype_name = "approve"
 
-		user = self._create_test_user("test_approve_permission@example.com", user_role)
-
 		ptype_doc = self._create_permission_type(ptype_name, doc_type)
+		self._verify_custom_fields_created(ptype_doc, doc_type)
+		self._verify_user_lacks_permission(doc_type, ptype_name, WEBSITE_MANAGER)
 
-		try:
-			self._verify_custom_fields_created(ptype_doc, doc_type)
+		update_permission_property(doctype=doc_type, role=user_role, permlevel=0, ptype=ptype_name, value=1)
 
-			self._verify_user_lacks_permission(doc_type, ptype_name, user.name)
-
-			update_permission_property(
-				doctype=doc_type, role=user_role, permlevel=0, ptype=ptype_name, value=1
-			)
-
-			self._verify_user_has_permission(doc_type, ptype_name, user.name)
-
-			update_permission_property(
-				doctype=doc_type, role=user_role, permlevel=0, ptype=ptype_name, value=0
-			)
-
-		finally:
-			frappe.delete_doc("User", user.name, force=True)
-			frappe.delete_doc("Permission Type", ptype_doc.name, force=True)
+		self._verify_user_has_permission(doc_type, ptype_name, WEBSITE_MANAGER)
 
 	def test_same_perm_type_multiple_doctypes(self):
 		"""Regression: same perm_type for two different doc_types must update depends_on on the shared Custom Field."""
@@ -53,25 +41,20 @@ class IntegrationTestPermissionType(IntegrationTestCase):
 		doc_type_a = "Web Page"
 		doc_type_b = "ToDo"
 
-		ptype_a = self._create_permission_type(ptype_name, doc_type_a)
+		self._create_permission_type(ptype_name, doc_type_a)
 		ptype_b = self._create_permission_type(ptype_name, doc_type_b)
 
-		try:
-			for target in ["Custom DocPerm", "DocPerm", "DocShare"]:
-				custom_field = frappe.get_doc("Custom Field", {"dt": target, "fieldname": ptype_name})
-				self.assertIn(doc_type_a, custom_field.depends_on)
-				self.assertIn(doc_type_b, custom_field.depends_on)
+		for target in ["Custom DocPerm", "DocPerm", "DocShare"]:
+			custom_field = frappe.get_doc("Custom Field", {"dt": target, "fieldname": ptype_name})
+			self.assertIn(doc_type_a, custom_field.depends_on)
+			self.assertIn(doc_type_b, custom_field.depends_on)
 
-			# deleting one sibling should update depends_on, not delete the field
-			frappe.delete_doc("Permission Type", ptype_b.name, force=True)
-			for target in ["Custom DocPerm", "DocPerm", "DocShare"]:
-				custom_field = frappe.get_doc("Custom Field", {"dt": target, "fieldname": ptype_name})
-				self.assertNotIn(doc_type_b, custom_field.depends_on)
-				self.assertIn(doc_type_a, custom_field.depends_on)
-		finally:
-			frappe.delete_doc("Permission Type", ptype_a.name, force=True)
-			if frappe.db.exists("Permission Type", ptype_b.name):
-				frappe.delete_doc("Permission Type", ptype_b.name, force=True)
+		# deleting one sibling should update depends_on, not delete the field
+		frappe.delete_doc("Permission Type", ptype_b.name, force=True)
+		for target in ["Custom DocPerm", "DocPerm", "DocShare"]:
+			custom_field = frappe.get_doc("Custom Field", {"dt": target, "fieldname": ptype_name})
+			self.assertNotIn(doc_type_b, custom_field.depends_on)
+			self.assertIn(doc_type_a, custom_field.depends_on)
 
 	def test_doctype_ptype_map_cache_invalidated(self):
 		"""get_doctype_ptype_map() is the source boot exposes to the client (frappe.perm) so it
@@ -108,16 +91,6 @@ class IntegrationTestPermissionType(IntegrationTestCase):
 		with self.assertRaises(frappe.exceptions.ValidationError):
 			doc.insert()
 
-	def _create_test_user(self, email, role):
-		"""Create a test user with the specified role."""
-		user = frappe.new_doc("User")
-		user.email = email
-		user.first_name = email.split("@", 1)[0]
-		user.insert(ignore_if_duplicate=True)
-		user.reload()
-		user.add_roles(role)
-		return user
-
 	def _create_permission_type(self, name, doc_type):
 		"""Create a permission type for the specified doctype."""
 		ptype_doc = frappe.get_doc(
@@ -128,9 +101,22 @@ class IntegrationTestPermissionType(IntegrationTestCase):
 				"module": "Core",
 			}
 		)
-		ptype_doc.insert(ignore_if_duplicate=True)
-		ptype_doc.reload()
-		return ptype_doc
+		ptype_doc.autoname()
+		columns_to_remove = [
+			doctype for doctype in CUSTOM_FIELD_TARGET if not frappe.db.has_column(doctype, name)
+		]
+		self.addCleanup(self._remove_permission_type, ptype_doc.name, name, columns_to_remove)
+		return ptype_doc.insert()
+
+	@staticmethod
+	def _remove_permission_type(docname, fieldname, columns_to_remove):
+		cleanup_committed_test_data(
+			frappe.delete_doc_if_exists, "Permission Type", docname, force=True, delete_permanently=True
+		)
+		for doctype in columns_to_remove:
+			if frappe.db.has_column(doctype, fieldname):
+				frappe.db.drop_columns(doctype, [fieldname])
+				frappe.clear_cache(doctype=doctype)
 
 	def _verify_custom_fields_created(self, ptype_doc, doc_type):
 		"""Verify that custom fields are created for the permission type."""
