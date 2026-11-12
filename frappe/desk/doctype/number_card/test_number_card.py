@@ -6,6 +6,7 @@ import frappe
 from frappe.core.doctype.user.test_user import test_user
 from frappe.desk.doctype.number_card.number_card import create_number_card, get_cards_for_user
 from frappe.tests import IntegrationTestCase
+from frappe.tests.baseline import DESK_USER
 
 
 class TestNumberCard(IntegrationTestCase):
@@ -150,8 +151,7 @@ class TestNumberCard(IntegrationTestCase):
 		}
 
 		with (
-			test_user(roles=["Desk User"]) as user,
-			self.set_user(user.name),
+			self.set_user(DESK_USER),
 			patch.dict(frappe.conf, {"developer_mode": 0}),
 		):
 			card = create_number_card(args)

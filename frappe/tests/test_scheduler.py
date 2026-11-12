@@ -43,6 +43,7 @@ class TestScheduler(IntegrationTestCase):
 
 	def tearDown(self):
 		purge_pending_jobs()
+		super().tearDown()
 
 	# a live worker would otherwise run every scheduled job while later tests run
 	@patch("frappe.core.doctype.scheduled_job_type.scheduled_job_type.enqueue")
@@ -81,13 +82,14 @@ class TestScheduler(IntegrationTestCase):
 		last_activity = frappe.db.get_value(
 			"User", filters={}, fieldname="last_active", order_by="last_active desc"
 		)
-		frappe.db.truncate("Scheduled Job Log")
+		frappe.db.delete("Scheduled Job Log")
 		self.assertTrue(schedule_jobs_based_on_activity(check_time=get_datetime("2100-01-01 00:00:00")))
 		self.assertTrue(schedule_jobs_based_on_activity(check_time=add_days(last_activity, 5)))
 
 		# create a fake job executed 5 days from now
 		job = get_test_job(method="frappe.tests.test_scheduler.test_method", frequency="Daily")
-		job.execute()
+		with patch.object(frappe.db, "commit"):
+			job.execute()
 		job_log = frappe.get_doc("Scheduled Job Log", dict(scheduled_job_type=job.name))
 		job_log.db_set("creation", add_days(last_activity, 5), update_modified=False)
 		schedule_jobs_based_on_activity.clear_cache()
@@ -209,6 +211,5 @@ def get_test_job(method="frappe.tests.test_scheduler.test_timeout_10", frequency
 		job = frappe.get_doc("Scheduled Job Type", dict(method=method))
 		job.db_set("last_execution", "2010-01-01 00:00:00")
 		job.db_set("frequency", frequency)
-	frappe.db.commit()
 
 	return job

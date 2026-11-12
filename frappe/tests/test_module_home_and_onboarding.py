@@ -13,6 +13,7 @@ from frappe.desk.doctype.sidebar.test_sidebar import (
 	system_write,
 )
 from frappe.tests import IntegrationTestCase
+from frappe.tests.baseline import SYSTEM_MANAGER
 
 USER = "test-derived-home@example.com"
 ROLE = "Test Derived Home Role"
@@ -28,6 +29,7 @@ class DerivedHomeTestCase(IntegrationTestCase):
 
 	def tearDown(self):
 		self.as_user("Administrator")
+		super().tearDown()
 
 	def as_user(self, user: str):
 		"""Switch user, and drop what the previous one cached.
@@ -296,13 +298,12 @@ class TestOnboardingIsOfferedByRole(DerivedHomeTestCase):
 		same rule read for the whole site at once. The two must stay in step.
 		"""
 		gate = self.make_role("Test Onboarding Gate Role")
-		manager = self.make_user(roles=["System Manager"])
 
 		with custom_module("Test Manager Onboarding Module") as module:
 			make_sidebar(module)
 			self.make_onboarding("Test Manager Onboarding", module, roles=[gate])
 
-			with self.acting_as(manager):
+			with self.acting_as(SYSTEM_MANAGER):
 				self.assertEqual(self.onboarding_of(module), "Test Manager Onboarding")
 
 	def test_the_earlier_created_permitted_one_wins(self):

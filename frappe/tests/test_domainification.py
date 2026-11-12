@@ -1,26 +1,19 @@
 # Copyright (c) 2015, Frappe Technologies Pvt. Ltd. and Contributors
 # License: MIT. See LICENSE
 import frappe
+from frappe.core.doctype.doctype.test_doctype import insert_test_doctype
 from frappe.core.doctype.domain_settings.domain_settings import get_active_modules
 from frappe.core.page.permission_manager.permission_manager import get_roles_and_doctypes
 from frappe.tests import IntegrationTestCase
 
 
 class TestDomainification(IntegrationTestCase):
-	def setUp(self):
-		# create test domain
+	def prepare_domains(self):
+		frappe.db.after_rollback.add(frappe.clear_cache)
 		self.new_domain("_Test Domain 1")
 		self.new_domain("_Test Domain 2")
-
 		self.remove_from_active_domains(remove_all=True)
 		self.add_active_domain("_Test Domain 1")
-
-	def tearDown(self):
-		frappe.db.delete("Role", {"name": "_Test Role"})
-		frappe.db.delete("Has Role", {"role": "_Test Role"})
-		frappe.db.delete("Domain", {"name": ("in", ("_Test Domain 1", "_Test Domain 2"))})
-		frappe.delete_doc("DocType", "Test Domainification")
-		self.remove_from_active_domains(remove_all=True)
 
 	def add_active_domain(self, domain):
 		"""add domain in active domain"""
@@ -65,6 +58,7 @@ class TestDomainification(IntegrationTestCase):
 		)
 
 	def test_active_domains(self):
+		self.prepare_domains()
 		self.assertTrue("_Test Domain 1" in frappe.get_active_domains())
 		self.assertFalse("_Test Domain 2" in frappe.get_active_domains())
 
@@ -80,10 +74,9 @@ class TestDomainification(IntegrationTestCase):
 		in active domains
 		"""
 
-		test_doctype = self.new_doctype("Test Domainification")
-		test_doctype.insert()
-
-		test_role = frappe.get_doc({"doctype": "Role", "role_name": "_Test Role"}).insert()
+		test_doctype = insert_test_doctype(self, self.new_doctype("Test Domainification"))
+		self.prepare_domains()
+		test_role = frappe.get_doc("Role", "_Test Role")
 
 		# doctype should be hidden in desktop icon, role permissions
 		results = get_roles_and_doctypes()
@@ -91,8 +84,7 @@ class TestDomainification(IntegrationTestCase):
 		self.assertTrue("_Test Role" in [d.get("value") for d in results.get("roles")])
 
 		self.add_active_domain("_Test Domain 2")
-		test_doctype.restrict_to_domain = "_Test Domain 2"
-		test_doctype.save()
+		frappe.db.set_value("DocType", test_doctype.name, "restrict_to_domain", "_Test Domain 2")
 
 		test_role.restrict_to_domain = "_Test Domain 2"
 		test_role.save()

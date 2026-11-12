@@ -27,14 +27,15 @@ from frappe.desk.doctype.sidebar.test_sidebar import (
 )
 from frappe.desk.doctype.workspace.workspace import PRIVATE_MODULE, add_to_sidebar, ensure_module
 from frappe.tests import IntegrationTestCase
+from frappe.tests.baseline import DESK_USER, SYSTEM_MANAGER, WORKSPACE_MANAGER
 
 # Any module the dock can take you to will do, since these tests are about the layers rather than
 # this module. Not `Core`: it is a `code_only_modules` module now, so `get_navigable_modules`
 # skips it and the payload has no key for it.
 MODULE = "Users"
-USER = "test-sidebar-custom@example.com"
-MANAGER = "test-sidebar-manager@example.com"
-OTHER = "test-sidebar-other@example.com"
+USER = SYSTEM_MANAGER
+MANAGER = WORKSPACE_MANAGER
+OTHER = DESK_USER
 
 
 def make_user(email: str, roles: list[str]):
@@ -54,13 +55,12 @@ def make_user(email: str, roles: list[str]):
 class CustomizationTestCase(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
-		make_user(USER, ["System Manager"])
 		self.wipe()
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
 		self.wipe()
-		frappe.delete_doc("User", USER, force=True, ignore_missing=True)
+		super().tearDown()
 
 	def wipe(self, module: str = MODULE):
 		for name in frappe.get_all("Custom Sidebar", filters={"module": module}, pluck="name"):
@@ -465,14 +465,6 @@ class TestWhoMayTouchTheSiteLayer(CustomizationTestCase):
 	nobody by default.
 	"""
 
-	def setUp(self):
-		super().setUp()
-		make_user(MANAGER, ["Desk User", "Workspace Manager"])
-
-	def tearDown(self):
-		super().tearDown()
-		frappe.delete_doc("User", MANAGER, force=True, ignore_missing=True)
-
 	def test_a_desk_user_cannot_write_the_site_layer(self):
 		self.as_user()
 		self.assertNotIn("Workspace Manager", frappe.get_roles())
@@ -532,16 +524,17 @@ class TestWhoMayTouchTheSiteLayer(CustomizationTestCase):
 
 class TestUserRowsAreTheUsers(CustomizationTestCase):
 	def test_deleting_a_user_takes_their_arrangement_with_them(self):
-		self.as_user()
+		user = make_user("test-delete-sidebar-user@example.com", ["System Manager"]).name
+		frappe.set_user(user)
 		save_sidebar_customization(MODULE, json.dumps([]))
 		frappe.set_user("Administrator")
 		save_site_sidebar(MODULE, json.dumps([]))
 
-		self.assertTrue(frappe.db.exists("Custom Sidebar", {"user": USER}))
+		self.assertTrue(frappe.db.exists("Custom Sidebar", {"user": user}))
 
-		frappe.delete_doc("User", USER, force=True, ignore_permissions=True)
+		frappe.delete_doc("User", user, force=True, ignore_permissions=True)
 
-		self.assertFalse(frappe.db.exists("Custom Sidebar", {"user": USER}))
+		self.assertFalse(frappe.db.exists("Custom Sidebar", {"user": user}))
 		# the site layer is nobody's personal preference
 		self.assertTrue(frappe.db.exists("Custom Sidebar", {"user": ""}))
 
@@ -549,14 +542,6 @@ class TestUserRowsAreTheUsers(CustomizationTestCase):
 class TestALayerKeepsItsOwner(CustomizationTestCase):
 	"""`has_permission` reads `user` off the document being saved, so naming yourself on someone
 	else's layer must not be what lets you write it."""
-
-	def setUp(self):
-		super().setUp()
-		make_user(OTHER, ["Desk User"])
-
-	def tearDown(self):
-		super().tearDown()
-		frappe.delete_doc("User", OTHER, force=True, ignore_missing=True)
 
 	def take(self, name):
 		from frappe.client import set_value
@@ -785,14 +770,6 @@ class TestWhatTheEditorOpensOn(CustomizationTestCase):
 	rows are a delta, while this editor saves the whole arrangement.
 
 	"""
-
-	def setUp(self):
-		super().setUp()
-		make_user(MANAGER, ["Desk User", "Workspace Manager"])
-
-	def tearDown(self):
-		super().tearDown()
-		frappe.delete_doc("User", MANAGER, force=True, ignore_missing=True)
 
 	def read(self, layer: str, module: str = MODULE):
 		endpoint = get_user_sidebar_layer if layer == "user" else get_site_sidebar_layer
@@ -1088,14 +1065,6 @@ class TestResetToStandard(CustomizationTestCase):
 
 	"""
 
-	def setUp(self):
-		super().setUp()
-		make_user(MANAGER, ["Desk User", "Workspace Manager"])
-
-	def tearDown(self):
-		super().tearDown()
-		frappe.delete_doc("User", MANAGER, force=True, ignore_missing=True)
-
 	def arrange_every_layer(self):
 		"""A site layer and two people's own, all hiding something."""
 		target = next(i for i in self.base_items() if i["type"] != "Section Break")
@@ -1170,14 +1139,6 @@ class TestAnAddedItemIsStillPermissionChecked(CustomizationTestCase):
 
 	"""
 
-	def setUp(self):
-		super().setUp()
-		make_user(MANAGER, ["Desk User", "Workspace Manager"])
-
-	def tearDown(self):
-		super().tearDown()
-		frappe.delete_doc("User", MANAGER, force=True, ignore_missing=True)
-
 	def add_to_site_layer(self, **item):
 		save_site_sidebar(MODULE, json.dumps([*self.base_items(), {"added": 1, "type": "Link", **item}]))
 
@@ -1210,7 +1171,6 @@ class TestTheEditorHidesWhatTheReaderMayNotOpen(CustomizationTestCase):
 
 	def setUp(self):
 		super().setUp()
-		make_user(MANAGER, ["Desk User", "Workspace Manager"])
 		save_site_sidebar(
 			MODULE,
 			json.dumps(
@@ -1228,8 +1188,8 @@ class TestTheEditorHidesWhatTheReaderMayNotOpen(CustomizationTestCase):
 		)
 
 	def tearDown(self):
+		frappe.set_user("Administrator")
 		super().tearDown()
-		frappe.delete_doc("User", MANAGER, force=True, ignore_missing=True)
 
 	def links(self, read):
 		return [item["link_to"] for item in read(MODULE)]
@@ -1479,8 +1439,6 @@ class TestAPrivatePageWritesItsRows(CustomizationTestCase):
 		The endpoints said so already (`new_page`, `update_page`); the model says it now, because a
 		document API call reaches neither.
 		"""
-		make_user(OTHER, ["Desk User"])
-		self.addCleanup(frappe.delete_doc, "User", OTHER, force=True, ignore_missing=True)
 
 		self.as_user()
 		with self.assertRaises(frappe.PermissionError):
@@ -1493,12 +1451,10 @@ class TestAPrivatePageWritesItsRows(CustomizationTestCase):
 
 	def test_a_workspace_manager_may_make_one_for_somebody_else(self):
 		"""Which is what the manager dialog does, and what the endpoints have always allowed."""
-		make_user(OTHER, ["Desk User"])
-		self.addCleanup(frappe.delete_doc, "User", OTHER, force=True, ignore_missing=True)
-		make_user(MANAGER, ["System Manager", "Workspace Manager"])
-		self.addCleanup(frappe.delete_doc, "User", MANAGER, force=True, ignore_missing=True)
+		manager = make_user("test-sidebar-manager@example.com", ["System Manager", "Workspace Manager"])
+		self.addCleanup(frappe.delete_doc, "User", manager.name, force=True, ignore_missing=True)
 
-		frappe.set_user(MANAGER)
+		frappe.set_user(manager.name)
 		page = self.make_page("Test Rows Managed Page", for_user=OTHER, ignore_permissions=False)
 
 		frappe.set_user("Administrator")

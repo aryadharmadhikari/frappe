@@ -1,9 +1,9 @@
 # Copyright (c) 2020, Frappe Technologies and Contributors
 # License: MIT. See LICENSE
 import frappe
-from frappe.core.doctype.user.test_user import test_user
 from frappe.core.doctype.user.user import get_module_profile
 from frappe.tests import IntegrationTestCase
+from frappe.tests.baseline import DESK_USER
 
 
 class TestModuleProfile(IntegrationTestCase):
@@ -38,7 +38,7 @@ class TestModuleProfile(IntegrationTestCase):
 			block_modules=[{"module": "Core"}],
 		).insert()
 
-		with test_user(roles=["Desk User"]) as user, self.set_user(user.name):
+		with self.set_user(DESK_USER):
 			self.assertRaises(frappe.PermissionError, get_module_profile, "_Test Module Profile")
 
 		blocked = get_module_profile("_Test Module Profile")

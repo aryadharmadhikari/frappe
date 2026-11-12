@@ -11,9 +11,9 @@ LUCIDE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" vie
 
 class TestCustomIcon(IntegrationTestCase):
 	def tearDown(self):
-		frappe.db.rollback()
 		# the cache outlives the rolled back transaction
 		clear_symbol_cache()
+		super().tearDown()
 
 	def test_safe_svg_is_kept(self):
 		icon = frappe.get_doc({"doctype": "Custom Icon", "icon_name": "test-dot", "svg": SAFE_SVG}).insert()

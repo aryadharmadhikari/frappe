@@ -7,7 +7,6 @@ import tempfile
 from unittest.mock import patch
 
 import frappe
-from frappe.core.doctype.user_permission.test_user_permission import create_user
 from frappe.desk.doctype.kanban_board import kanban_board as kb
 from frappe.desk.doctype.kanban_board.kanban_board import (
 	get_kanban_board_data,
@@ -17,6 +16,7 @@ from frappe.desk.doctype.kanban_board.kanban_board import (
 	update_order_for_single_card,
 )
 from frappe.tests import IntegrationTestCase
+from frappe.tests.baseline import DESK_USER
 
 
 def _decompress_kanban_cards(cards):
@@ -26,14 +26,9 @@ def _decompress_kanban_cards(cards):
 
 
 class TestKanbanBoard(IntegrationTestCase):
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		cls.board_name = "_Test Kanban Order Board"
-		if frappe.db.exists("Kanban Board", cls.board_name):
-			frappe.delete_doc("Kanban Board", cls.board_name, force=1)
-
-		cls.todos = []
+	def setUp(self):
+		super().setUp()
+		self.todos = []
 		for i, status in enumerate(["Open", "Open", "Open", "Closed"]):
 			doc = frappe.get_doc(
 				{
@@ -42,47 +37,29 @@ class TestKanbanBoard(IntegrationTestCase):
 					"status": status,
 				}
 			).insert(ignore_permissions=True)
-			cls.todos.append(doc.name)
+			self.todos.append(doc.name)
 
 		board = frappe.get_doc(
 			{
 				"doctype": "Kanban Board",
-				"kanban_board_name": cls.board_name,
+				"kanban_board_name": f"_Test Kanban Order Board {frappe.generate_hash(length=8)}",
 				"reference_doctype": "ToDo",
 				"field_name": "status",
 				"private": 1,
-				"filters": frappe.as_json([["ToDo", "name", "in", cls.todos]]),
+				"filters": frappe.as_json([["ToDo", "name", "in", self.todos]]),
 				"columns": [
 					{
 						"column_name": "Open",
-						"order": frappe.as_json(cls.todos[:3]),
+						"order": frappe.as_json(self.todos[:3]),
 					},
 					{
 						"column_name": "Closed",
-						"order": frappe.as_json(cls.todos[3:]),
+						"order": frappe.as_json(self.todos[3:]),
 					},
 				],
 			}
 		).insert(ignore_permissions=True)
-		cls.board_name = board.name
-
-	@classmethod
-	def tearDownClass(cls):
-		if frappe.db.exists("Kanban Board", cls.board_name):
-			frappe.delete_doc("Kanban Board", cls.board_name, force=1)
-		for name in cls.todos:
-			if frappe.db.exists("ToDo", name):
-				frappe.delete_doc("ToDo", name, force=1)
-		super().tearDownClass()
-
-	def setUp(self):
-		board = frappe.get_doc("Kanban Board", self.board_name)
-		board.filters = frappe.as_json([["ToDo", "name", "in", self.todos]])
-		board.columns[0].order = frappe.as_json(self.todos[:3])
-		board.columns[1].order = frappe.as_json(self.todos[3:])
-		board.save(ignore_permissions=True)
-		for i, status in enumerate(["Open", "Open", "Open", "Closed"]):
-			frappe.db.set_value("ToDo", self.todos[i], "status", status)
+		self.board_name = board.name
 
 	def test_update_order_for_single_card_with_order_arrays_same_column(self):
 		open_order, _ = get_kanban_column_order_and_index(
@@ -184,11 +161,10 @@ class TestKanbanBoard(IntegrationTestCase):
 	def test_update_order_keeps_value_changed_outside_board(self):
 		frappe.db.set_value("Kanban Board", self.board_name, "private", 0)
 		self.addCleanup(frappe.db.set_value, "Kanban Board", self.board_name, "private", 1)
-		user = create_user("kanban_order_user@example.com", "Desk User")
-		frappe.db.set_value("ToDo", self.todos[0], {"allocated_to": user.name, "status": "Closed"})
+		frappe.db.set_value("ToDo", self.todos[0], {"allocated_to": DESK_USER, "status": "Closed"})
 		self.addCleanup(frappe.db.set_value, "ToDo", self.todos[0], "allocated_to", None)
 
-		with self.set_user(user.name):
+		with self.set_user(DESK_USER):
 			board, updated = update_order(
 				self.board_name,
 				frappe.as_json({"Open": self.todos[:3], "Closed": self.todos[3:]}),
@@ -407,11 +383,10 @@ class TestKanbanBoard(IntegrationTestCase):
 		self.addCleanup(frappe.db.set_value, "Kanban Board", self.board_name, "private", 1)
 
 		# A user without a ToDo role only sees the ToDos allocated to them.
-		user = create_user("kanban_lane_reader@example.com", "Desk User")
-		frappe.db.set_value("ToDo", self.todos[0], "allocated_to", user.name)
+		frappe.db.set_value("ToDo", self.todos[0], "allocated_to", DESK_USER)
 		self.addCleanup(frappe.db.set_value, "ToDo", self.todos[0], "allocated_to", None)
 
-		with self.set_user(user.name):
+		with self.set_user(DESK_USER):
 			res = get_kanban_group_values(self.board_name, "priority")
 			res_assign = get_kanban_group_values(self.board_name, "_assign")
 
@@ -422,11 +397,10 @@ class TestKanbanBoard(IntegrationTestCase):
 	def test_get_kanban_column_page_respects_permissions(self):
 		frappe.db.set_value("Kanban Board", self.board_name, "private", 0)
 		self.addCleanup(frappe.db.set_value, "Kanban Board", self.board_name, "private", 1)
-		user = create_user("kanban_lane_reader@example.com", "Desk User")
-		frappe.db.set_value("ToDo", self.todos[0], "allocated_to", user.name)
+		frappe.db.set_value("ToDo", self.todos[0], "allocated_to", DESK_USER)
 		self.addCleanup(frappe.db.set_value, "ToDo", self.todos[0], "allocated_to", None)
 
-		with self.set_user(user.name):
+		with self.set_user(DESK_USER):
 			frappe.local.form_dict = frappe._dict(
 				{
 					"board_name": self.board_name,
@@ -472,6 +446,7 @@ class TestKanbanBoardNativePayloads(IntegrationTestCase):
 
 	def tearDown(self):
 		frappe.delete_doc("Kanban Board", self.board.name, force=True)
+		super().tearDown()
 
 	def test_endpoints_accept_native_payloads(self):
 		# update_column_order with a native list (frappe.parse_json passthrough)

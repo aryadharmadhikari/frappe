@@ -117,6 +117,8 @@ class TestResult(unittest.TextTestResult):
 				self.stream.flush()
 
 	def getTestMethodName(self, test):
+		if hasattr(test, "test_case"):
+			return str(test)
 		return test._testMethodName if hasattr(test, "_testMethodName") else str(test)
 
 	def addSuccess(self, test):
@@ -136,6 +138,11 @@ class TestResult(unittest.TextTestResult):
 		super(unittest.TextTestResult, self).addFailure(test, err)
 		self._write_result(test, " ✖ ", "red")
 		logger.debug(f"{test!s:<200} {'[failure]':>20}")
+
+	def addSubTest(self, test, subtest, err):
+		super(unittest.TextTestResult, self).addSubTest(test, subtest, err)
+		if err is not None:
+			self._write_result(subtest, " ✖ ", "red")
 
 	def addSkip(self, test, reason):
 		super(unittest.TextTestResult, self).addSkip(test, reason)

@@ -12,6 +12,7 @@ from frappe.desk.page.workspace_restore.workspace_restore import (
 )
 from frappe.modules.import_file import import_doc
 from frappe.tests import IntegrationTestCase
+from frappe.tests.baseline import DESK_USER, WORKSPACE_MANAGER
 
 BASE_CONTENT = [{"id": "s1", "type": "shortcut", "data": {"shortcut_name": "My ToDos", "col": 4}}]
 MESSAGE_BLOCK = {
@@ -220,17 +221,14 @@ class TestWorkspaceRestore(IntegrationTestCase):
 	"""The upgrade story end to end: edit in place, lose it to the import, bring it back."""
 
 	WORKSPACE = "Restore Test Workspace"
-	MANAGER = "test-workspace-restore-manager@example.com"
-	DESK_USER = "test-workspace-restore-user@example.com"
 
 	def setUp(self):
 		frappe.set_user("Administrator")
+		self.enterContext(patch.dict(frappe.conf, {"developer_mode": 0}))
 		self.addCleanup(frappe.set_user, "Administrator")
 		# get_workspaces is request-cached and no request ends inside a test run
 		self.clear_request_cache()
 		self.addCleanup(self.clear_request_cache)
-		self.make_user(self.MANAGER, ["Desk User", "Workspace Manager"])
-		self.make_user(self.DESK_USER, ["Desk User"])
 
 		doc = frappe.new_doc("Workspace")
 		doc.label = doc.title = self.WORKSPACE
@@ -252,22 +250,11 @@ class TestWorkspaceRestore(IntegrationTestCase):
 		# the parent alone would leave its rows behind for the next test to render
 		for table in frappe.get_meta("Workspace").get_table_fields():
 			frappe.db.delete(table.options, {"parent": self.WORKSPACE, "parenttype": "Workspace"})
+		super().tearDown()
 
 	def clear_request_cache(self):
 		if getattr(frappe.local, "request_cache", None):
 			frappe.local.request_cache.clear()
-
-	def make_user(self, email, roles):
-		if not frappe.db.exists("User", email):
-			frappe.get_doc(
-				{
-					"doctype": "User",
-					"email": email,
-					"first_name": email.split("@")[0],
-					"send_welcome_email": 0,
-					"roles": [{"role": role} for role in roles],
-				}
-			).insert(ignore_permissions=True)
 
 	def edit_in_place(self, blocks, shortcut=None):
 		"""What a v16 editor save did: write the base and leave a Version row behind.
@@ -294,13 +281,13 @@ class TestWorkspaceRestore(IntegrationTestCase):
 
 	def test_edit_is_listed_before_and_after_the_upgrade(self):
 		self.edit_in_place([*BASE_CONTENT, MESSAGE_BLOCK])
-		frappe.set_user(self.MANAGER)
+		frappe.set_user(WORKSPACE_MANAGER)
 		self.assertEqual(self.listed()["state"], "Not yet overwritten")
 
 		frappe.set_user("Administrator")
 		self.upgrade()
 		self.assertNotIn("custom message", frappe.db.get_value("Workspace", self.WORKSPACE, "content"))
-		frappe.set_user(self.MANAGER)
+		frappe.set_user(WORKSPACE_MANAGER)
 		row = self.listed()
 		self.assertEqual(row["state"], "Overwritten")
 		self.assertEqual(row["summary"]["blocks"], 2)
@@ -309,7 +296,7 @@ class TestWorkspaceRestore(IntegrationTestCase):
 		self.edit_in_place([*BASE_CONTENT, MESSAGE_BLOCK, AUDIT_BLOCK], shortcut=AUDIT_SHORTCUT)
 		self.upgrade()
 
-		frappe.set_user(self.MANAGER)
+		frappe.set_user(WORKSPACE_MANAGER)
 		with patch.dict(frappe.conf, {"developer_mode": 0}):
 			payload = restore_workspace_edits(self.WORKSPACE)
 		self.assertEqual(payload["warnings"], [])
@@ -341,7 +328,7 @@ class TestWorkspaceRestore(IntegrationTestCase):
 		self.upgrade(self.shipped_without_shortcuts())
 		self.assertEqual(frappe.db.count("Workspace Shortcut", {"parent": self.WORKSPACE}), 0)
 
-		frappe.set_user(self.MANAGER)
+		frappe.set_user(WORKSPACE_MANAGER)
 		with patch.dict(frappe.conf, {"developer_mode": 0}):
 			payload = restore_workspace_edits(self.WORKSPACE)
 		self.assertEqual(payload["warnings"], [])
@@ -361,7 +348,7 @@ class TestWorkspaceRestore(IntegrationTestCase):
 		from frappe.model.delete_doc import add_to_deleted_document
 
 		add_to_deleted_document(frappe.get_doc("Workspace", self.WORKSPACE))
-		frappe.set_user(self.MANAGER)
+		frappe.set_user(WORKSPACE_MANAGER)
 		with patch.dict(frappe.conf, {"developer_mode": 0}):
 			payload = restore_workspace_edits(self.WORKSPACE)
 		self.assertEqual(payload["warnings"], [])
@@ -375,14 +362,14 @@ class TestWorkspaceRestore(IntegrationTestCase):
 		self.edit_in_place([*BASE_CONTENT, MESSAGE_BLOCK])
 		self.upgrade(self.shipped_without_shortcuts())
 		frappe.db.delete("Deleted Document", {"deleted_doctype": "Workspace", "deleted_name": self.WORKSPACE})
-		frappe.set_user(self.MANAGER)
+		frappe.set_user(WORKSPACE_MANAGER)
 		row = self.listed()
 		self.assertTrue(any("My ToDos" in warning for warning in row["warnings"]))
 
 	def test_restore_is_idempotent(self):
 		self.edit_in_place([*BASE_CONTENT, MESSAGE_BLOCK])
 		self.upgrade()
-		frappe.set_user(self.MANAGER)
+		frappe.set_user(WORKSPACE_MANAGER)
 		with patch.dict(frappe.conf, {"developer_mode": 0}):
 			restore_workspace_edits(self.WORKSPACE)
 			first = frappe.get_doc("Custom Workspace", self.WORKSPACE).as_dict()
@@ -397,13 +384,13 @@ class TestWorkspaceRestore(IntegrationTestCase):
 		frappe.get_doc(
 			{"doctype": "Custom Workspace", "workspace": self.WORKSPACE, "content": dumps(BASE_CONTENT)}
 		).insert()
-		frappe.set_user(self.MANAGER)
+		frappe.set_user(WORKSPACE_MANAGER)
 		self.assertEqual(self.listed()["state"], "Customized since")
 
 	def test_restore_again_replaces_later_settings(self):
 		self.edit_in_place([*BASE_CONTENT, MESSAGE_BLOCK])
 		self.upgrade()
-		frappe.set_user(self.MANAGER)
+		frappe.set_user(WORKSPACE_MANAGER)
 		with patch.dict(frappe.conf, {"developer_mode": 0}):
 			restore_workspace_edits(self.WORKSPACE)
 			customization = frappe.get_doc("Custom Workspace", self.WORKSPACE)
@@ -420,13 +407,13 @@ class TestWorkspaceRestore(IntegrationTestCase):
 
 	def test_requires_workspace_manager(self):
 		self.edit_in_place([*BASE_CONTENT, MESSAGE_BLOCK])
-		frappe.set_user(self.DESK_USER)
+		frappe.set_user(DESK_USER)
 		self.assertRaises(frappe.PermissionError, get_restorable_workspaces)
 		self.assertRaises(frappe.PermissionError, restore_workspace_edits, self.WORKSPACE)
 
 	def test_developer_mode_lists_nothing_and_refuses_the_write(self):
 		self.edit_in_place([*BASE_CONTENT, MESSAGE_BLOCK])
-		frappe.set_user(self.MANAGER)
+		frappe.set_user(WORKSPACE_MANAGER)
 		with patch.dict(frappe.conf, {"developer_mode": 1}):
 			# an author's edits live in the app's JSON, not in a customization
 			self.assertIsNone(self.listed())
@@ -437,5 +424,5 @@ class TestWorkspaceRestore(IntegrationTestCase):
 		doc.icon = "cable"
 		doc.save(ignore_permissions=True, ignore_version=False)
 		self.assertTrue(frappe.db.exists("Version", {"ref_doctype": "Workspace", "docname": self.WORKSPACE}))
-		frappe.set_user(self.MANAGER)
+		frappe.set_user(WORKSPACE_MANAGER)
 		self.assertIsNone(self.listed())

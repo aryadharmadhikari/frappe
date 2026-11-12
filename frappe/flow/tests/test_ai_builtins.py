@@ -98,7 +98,7 @@ REPORT_JS = """frappe.query_reports["Flow Report Probe"] = {
 class TestFindDoctypes(IntegrationTestCase):
 	def tearDown(self):
 		frappe.set_user("Administrator")
-		frappe.db.rollback()
+		super().tearDown()
 
 	def test_searches_by_name_and_module(self):
 		names = {r["name"] for r in find_doctypes(search="Role", limit=200, ctx=CTX)["doctypes"]}
@@ -141,7 +141,7 @@ class TestFindDoctypes(IntegrationTestCase):
 class TestDescribe(IntegrationTestCase):
 	def tearDown(self):
 		frappe.set_user("Administrator")
-		frappe.db.rollback()
+		super().tearDown()
 
 	def test_returns_fields_and_permissions(self):
 		result = describe(doctype="ToDo", ctx=CTX)
@@ -284,7 +284,7 @@ class TestFindApis(IntegrationTestCase):
 class TestReadRecords(IntegrationTestCase):
 	def tearDown(self):
 		frappe.set_user("Administrator")
-		frappe.db.rollback()
+		super().tearDown()
 
 	def test_reads_matching_records_newest_first_with_their_total(self):
 		# by name, the older one comes first
@@ -398,7 +398,7 @@ class TestRunReport(IntegrationTestCase):
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
-		frappe.db.rollback()
+		super().tearDown()
 
 	def test_returns_shown_columns_capped_rows_the_count_and_total(self):
 		result = run_report(report_name=self.report.name, filters={"company": "Acme"}, limit=10, ctx=CTX)
@@ -526,9 +526,6 @@ class TestExecute(IntegrationTestCase):
 		cls.enterClassContext(patch("frappe.utils.safe_exec.is_safe_exec_enabled", return_value=True))
 		super().setUpClass()
 
-	def tearDown(self):
-		frappe.db.rollback()
-
 	def test_returns_the_result_variable(self):
 		for code, expected in (("result = 1 + 1", 2), ("x = 5", None)):
 			with self.subTest(code):
@@ -562,9 +559,6 @@ class TestReadOnlyCalls(IntegrationTestCase):
 		frappe.db.rollback()
 		self.enterContext(self.set_user("test@example.com"))
 		self.ctx = ToolContext(session_id="test", agent="Test Agent", user="test@example.com")
-
-	def tearDown(self):
-		frappe.db.rollback()
 
 	def run_function(self, name: str, **args):
 		return run_action(doctype="", names=[], action=f"{MODULE}.{name}", args=args, ctx=self.ctx)
@@ -676,7 +670,7 @@ class TestWriteTools(IntegrationTestCase):
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
-		frappe.db.rollback()
+		super().tearDown()
 
 	def test_create_update_and_delete_every_record(self):
 		result = create(doctype="ToDo", records=[{"description": "ai create probe"}], ctx=CTX)
@@ -750,9 +744,6 @@ class TestWriteTools(IntegrationTestCase):
 
 
 class TestSyncBuiltinTools(IntegrationTestCase):
-	def tearDown(self):
-		frappe.db.rollback()
-
 	def test_syncs_one_row_per_builtin_that_resolves_to_the_code(self):
 		sync_builtin_tools()
 		sync_builtin_tools()  # a second run updates the rows in place

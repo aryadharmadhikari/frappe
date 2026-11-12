@@ -6,25 +6,18 @@ from unittest.mock import patch
 import frappe
 from frappe.automation.doctype.assignment_rule.assignment_rule import reopen_closed_assignment
 from frappe.tests import IntegrationTestCase
-from frappe.tests.utils import make_test_records
+
+EXTRA_TEST_RECORD_DEPENDENCIES = ["User"]
 
 TEST_DOCTYPE = "Assignment Test"
 
 
 class TestAutoAssign(IntegrationTestCase):
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		frappe.db.delete("Assignment Rule")
-		create_test_doctype(TEST_DOCTYPE)
-
-	@classmethod
-	def tearDownClass(cls):
-		frappe.db.rollback()
-
 	def setUp(self):
+		super().setUp()
 		frappe.set_user("Administrator")
-		make_test_records("User")
+		if not frappe.db.exists("DocType", TEST_DOCTYPE):
+			create_test_doctype(TEST_DOCTYPE)
 		days = [
 			dict(day="Sunday"),
 			dict(day="Monday"),
@@ -253,7 +246,7 @@ class TestAutoAssign(IntegrationTestCase):
 		)
 
 	def check_assignment_rule_scheduling(self):
-		frappe.db.delete("Assignment Rule")
+		delete_test_rules()
 
 		days_1 = [dict(day="Sunday"), dict(day="Monday"), dict(day="Tuesday")]
 
@@ -286,7 +279,7 @@ class TestAutoAssign(IntegrationTestCase):
 		)
 
 	def test_assignment_rule_condition(self):
-		frappe.db.delete("Assignment Rule")
+		delete_test_rules()
 
 		assignment_rule = frappe.get_doc(
 			name="Assignment with Due Date",
@@ -326,7 +319,6 @@ class TestAutoAssign(IntegrationTestCase):
 		self.assertNotEqual(frappe.utils.get_date_str(note2_todo.date), note1.expiry_date)
 		self.assertEqual(frappe.utils.get_date_str(note2_todo.date), expiry_date)
 		assignment_rule.delete()
-		frappe.db.commit()  # undo changes commited by DDL
 
 	def test_submittable_assignment(self):
 		# create a submittable doctype
@@ -376,6 +368,11 @@ class TestAutoAssign(IntegrationTestCase):
 			},
 		)
 		self.assertEqual(len(todos), 1)
+
+
+def delete_test_rules():
+	for name in frappe.get_all("Assignment Rule", {"document_type": TEST_DOCTYPE}, pluck="name"):
+		frappe.delete_doc("Assignment Rule", name)
 
 
 def clear_assignments():

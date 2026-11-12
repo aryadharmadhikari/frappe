@@ -49,9 +49,6 @@ def _agent_doc(model_name: str, **overrides: Any) -> dict:
 
 
 class TestAttachFile(IntegrationTestCase):
-	def tearDown(self):
-		frappe.db.rollback()
-
 	def _file(self, file_name: str = "report.txt", content: str = "report body"):
 		return frappe.get_doc(
 			{"doctype": "File", "file_name": file_name, "content": content, "is_private": 1}
@@ -152,8 +149,8 @@ class TestSubmitFeedback(IntegrationTestCase):
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
-		frappe.db.rollback()
 		memory_store.drop_table()
+		super().tearDown()
 
 	def _run(self, status: str = "Completed", agent: str | None = None, **fields) -> str:
 		session = frappe.get_doc({"doctype": "Flow Session", "agent": agent or self.agent.name}).insert(
@@ -261,7 +258,7 @@ class ApiCase(IntegrationTestCase):
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
-		frappe.db.rollback()
+		super().tearDown()
 
 	def create(self, **fields) -> str:
 		return api.create_session(self.agent.name, **fields)["name"]

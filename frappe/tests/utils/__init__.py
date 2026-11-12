@@ -63,6 +63,17 @@ def toggle_test_mode(enable: bool):
 	frappe.local.flags.in_test = enable
 
 
+def cleanup_committed_test_data(cleanup, *args, **kwargs):
+	"""Discard pending writes, then commit cleanup for records a test already published."""
+	frappe.db.rollback()
+	try:
+		cleanup(*args, **kwargs)
+		frappe.db.commit()  # nosemgrep
+	except Exception:
+		frappe.db.rollback()
+		raise
+
+
 def wait_for_job(job_id: str, wait_timeout: float = 10):
 	"""Wait for an enqueued job to stop running, so a test does not race the worker.
 

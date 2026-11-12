@@ -159,7 +159,8 @@ class Importer:
 			_build_db_tree_parent_name_map(self.doctype, refs_to_fetch, self._tree_alias_field)
 		)
 
-	def import_data(self):
+	def import_data(self, *, commit=True):
+		"""Import rows with per-row commits, or leave writes to the caller's transaction."""
 		self.before_import()
 
 		# parse docs from rows
@@ -195,7 +196,7 @@ class Importer:
 				)
 			return
 
-		create_missing_link_records(self.data_import)
+		create_missing_link_records(self.data_import, commit=commit)
 
 		# Read previous status before 'In Progress' overwrites it; retry purge needs it.
 		previous_status = self.data_import.status
@@ -292,6 +293,8 @@ class Importer:
 					continue
 
 				start = timeit.default_timer()
+				if not commit:
+					frappe.db.savepoint("data_import_row")
 				try:
 					doc, import_action = self.process_doc(doc)
 					processing_time = timeit.default_timer() - start
@@ -339,15 +342,20 @@ class Importer:
 
 					log_index += 1
 
-					# commit after every successful import
-					frappe.db.commit()
+					if commit:
+						frappe.db.commit()
+					else:
+						frappe.db.release_savepoint("data_import_row")
 
 				except Exception:
 					messages = frappe.local.message_log
 					frappe.clear_messages()
 
-					# rollback if exception
-					frappe.db.rollback()
+					if commit:
+						frappe.db.rollback()
+					else:
+						frappe.db.rollback(save_point="data_import_row")
+						frappe.db.release_savepoint("data_import_row")
 
 					create_import_log(
 						self.data_import.name,

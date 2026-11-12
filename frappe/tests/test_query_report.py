@@ -15,6 +15,8 @@ from frappe.desk.query_report import (
 	run,
 )
 from frappe.tests import IntegrationTestCase
+from frappe.tests.baseline import SYSTEM_MANAGER, WEBSITE_MANAGER
+from frappe.tests.utils import cleanup_committed_test_data
 from frappe.utils.xlsxutils import XLSXMetadata, XLSXStyleBuilder, make_xlsx
 
 
@@ -23,9 +25,6 @@ class TestQueryReport(IntegrationTestCase):
 	def setUpClass(cls) -> None:
 		cls.enterClassContext(cls.enable_safe_exec())
 		return super().setUpClass()
-
-	def tearDown(self):
-		frappe.db.rollback()
 
 	def test_user_facing_error(self):
 		from frappe.desk.query_report import get_user_facing_error
@@ -302,10 +301,7 @@ class TestQueryReport(IntegrationTestCase):
 			run(report.name, filters)
 
 	def test_get_script_quotes_report_name(self):
-		from frappe.core.doctype.user_permission.test_user_permission import create_user
-
 		frappe.set_user("Administrator")
-		user = create_user("test_report_script_reader@example.com", "Website Manager")
 		report = frappe.get_doc(
 			{
 				"doctype": "Report",
@@ -318,7 +314,7 @@ class TestQueryReport(IntegrationTestCase):
 			}
 		).insert(ignore_permissions=True)
 
-		with self.set_user(user.name):
+		with self.set_user(WEBSITE_MANAGER):
 			script = get_script(report.name)["script"]
 
 		self.assertEqual(script, f'frappe.query_reports["{report.name}"]={{}}')
@@ -326,14 +322,11 @@ class TestQueryReport(IntegrationTestCase):
 	def test_get_script_reports_a_python_formatter(self):
 		from unittest.mock import patch
 
-		from frappe.core.doctype.user_permission.test_user_permission import create_user
-
 		frappe.set_user("Administrator")
-		user = create_user("test_report_formatter_reader@example.com")
 
 		with (
 			patch("frappe.desk.report.todo.todo.formatter", lambda *args: None, create=True),
-			self.set_user(user.name),
+			self.set_user(SYSTEM_MANAGER),
 		):
 			self.assertTrue(get_script("ToDo")["has_python_formatter"])
 
@@ -465,54 +458,6 @@ class TestQueryReport(IntegrationTestCase):
 		)
 		format_fields(data, "Excel")
 		self.assertEqual(data.result[0], {"account": "Total Asset (Debit)", "remarks": "'As per ledger'"})
-
-	def test_csv(self):
-		from csv import QUOTE_ALL, QUOTE_MINIMAL, QUOTE_NONE, QUOTE_NONNUMERIC, DictReader
-		from io import StringIO
-
-		REPORT_NAME = "Test CSV Report"
-		REF_DOCTYPE = "DocType"
-		REPORT_COLUMNS = ["name", "module", "issingle"]
-
-		report = (
-			frappe.get_doc("Report", REPORT_NAME)
-			if frappe.db.exists("Report", REPORT_NAME)
-			else frappe.new_doc("Report")
-		)
-		report.report_name = REPORT_NAME
-		report.ref_doctype = "User"
-		report.report_type = "Query Report"
-		report.query = (
-			f"SELECT {', '.join(f'`{column}`' for column in REPORT_COLUMNS)} FROM `tab{REF_DOCTYPE}` LIMIT 10"
-		)
-		report.is_standard = "No"
-		report.save()
-
-		for delimiter in (",", ";", "\t", "|"):
-			for quoting in (QUOTE_ALL, QUOTE_MINIMAL, QUOTE_NONE, QUOTE_NONNUMERIC):
-				frappe.local.form_dict = frappe._dict(
-					{
-						"report_name": REPORT_NAME,
-						"file_format_type": "CSV",
-						"csv_quoting": quoting,
-						"csv_delimiter": delimiter,
-						"include_indentation": 0,
-						"visible_idx": [0, 1, 2],
-					}
-				)
-				frappe.db.commit()
-				export_query()
-
-				self.assertTrue(frappe.response["filename"].endswith(".csv"))
-				self.assertEqual(frappe.response["type"], "binary")
-				with StringIO(frappe.response["filecontent"].decode("utf-8")) as result:
-					reader = DictReader(result, delimiter=delimiter, quoting=quoting)
-					row = reader.__next__()
-					for column in REPORT_COLUMNS:
-						self.assertIn(column, row)
-
-		frappe.delete_doc("Report", REPORT_NAME, delete_permanently=True)
-		frappe.db.commit()
 
 	def test_report_for_duplicate_column_names(self):
 		"""Test report with duplicate column names"""
@@ -788,47 +733,6 @@ data = columns, result
 			indent = builder.styles[builder.cell_styles[(row_idx, 0)][0]]["indent"]
 			self.assertEqual(indent, expected)
 			self.assertIsInstance(indent, int)
-
-	def test_export_report_via_email(self):
-		REPORT_NAME = "Test CSV Report"
-		REF_DOCTYPE = "DocType"
-		REPORT_COLUMNS = ["name", "module", "issingle"]
-
-		report = (
-			frappe.get_doc("Report", REPORT_NAME)
-			if frappe.db.exists("Report", REPORT_NAME)
-			else frappe.new_doc("Report")
-		)
-		report.report_name = REPORT_NAME
-		report.ref_doctype = "User"
-		report.report_type = "Query Report"
-		report.query = (
-			f"SELECT {', '.join(f'`{column}`' for column in REPORT_COLUMNS)} FROM `tab{REF_DOCTYPE}` LIMIT 10"
-		)
-		report.is_standard = "No"
-		report.save()
-
-		frappe.local.form_dict = frappe._dict(
-			{
-				"report_name": REPORT_NAME,
-				"file_format_type": "CSV",
-				"include_indentation": 0,
-				"visible_idx": [0, 1, 2],
-				"export_in_background": 1,
-			}
-		)
-		frappe.db.delete("Email Queue")
-		user_email = frappe.get_cached_value("User", frappe.session.user, "email")
-		frappe.db.delete("Email Unsubscribe", {"email": user_email})
-		frappe.db.commit()
-		export_query()
-
-		email_queue = frappe.get_all("Email Queue")
-
-		self.assertTrue(email_queue, "Email was not enqueued")
-
-		frappe.delete_doc("Report", REPORT_NAME, delete_permanently=True)
-		frappe.db.commit()
 
 	def test_validated_filters_are_defaulted_and_cast(self):
 		report, user = self.make_filtered_report()
@@ -1129,10 +1033,8 @@ data = columns, result
 			report.save()
 
 	def make_filtered_report(self):
-		from frappe.core.doctype.user_permission.test_user_permission import create_user
-
 		frappe.set_user("Administrator")
-		user = create_user("test_report_filters@example.com", "Website Manager").name
+		user = WEBSITE_MANAGER
 		report = frappe.get_doc(
 			{
 				"doctype": "Report",
@@ -1257,6 +1159,89 @@ data = columns, result
 			"Row 4: first. Row 4: second one. Row 5: third.",
 			get_user_facing_error(traceback),
 		)
+
+
+class TestQueryReportExports(IntegrationTestCase):
+	report_name = "Test CSV Report"
+	report_columns = ("name", "module", "issingle")
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.report_name = f"Test CSV Report {frappe.generate_hash(length=8)}"
+		cls.addClassCleanup(
+			cleanup_committed_test_data, frappe.delete_doc_if_exists, "Report", cls.report_name
+		)
+		cls.recipient = f"report-export-{frappe.generate_hash(length=8)}@example.com"
+		cls.addClassCleanup(cleanup_committed_test_data, frappe.delete_doc_if_exists, "User", cls.recipient)
+		frappe.get_doc(
+			doctype="User",
+			email=cls.recipient,
+			first_name="Report Export",
+			send_welcome_email=0,
+			roles=[{"role": "System Manager"}],
+		).insert()
+		columns = ", ".join(f"`{column}`" for column in cls.report_columns)
+		frappe.get_doc(
+			doctype="Report",
+			report_name=cls.report_name,
+			ref_doctype="User",
+			report_type="Query Report",
+			query=f"SELECT {columns} FROM `tabDocType` LIMIT 10",
+			is_standard="No",
+		).insert()
+		frappe.db.commit()
+
+	def test_csv(self):
+		from csv import QUOTE_ALL, QUOTE_MINIMAL, QUOTE_NONE, QUOTE_NONNUMERIC, DictReader
+		from io import StringIO
+
+		for delimiter in (",", ";", "\t", "|"):
+			for quoting in (QUOTE_ALL, QUOTE_MINIMAL, QUOTE_NONE, QUOTE_NONNUMERIC):
+				frappe.local.form_dict = frappe._dict(
+					{
+						"report_name": self.report_name,
+						"file_format_type": "CSV",
+						"csv_quoting": quoting,
+						"csv_delimiter": delimiter,
+						"include_indentation": 0,
+						"visible_idx": [0, 1, 2],
+					}
+				)
+				export_query()
+
+				self.assertTrue(frappe.response["filename"].endswith(".csv"))
+				self.assertEqual(frappe.response["type"], "binary")
+				with StringIO(frappe.response["filecontent"].decode("utf-8")) as result:
+					reader = DictReader(result, delimiter=delimiter, quoting=quoting)
+					row = reader.__next__()
+					for column in self.report_columns:
+						self.assertIn(column, row)
+
+	def test_export_report_via_email(self):
+		from email import policy
+		from email.parser import Parser
+		from unittest.mock import patch
+
+		with (
+			self.set_user(self.recipient),
+			patch.dict(frappe.conf, mail_server="localhost", auto_email_id="report-exports@example.com"),
+		):
+			frappe.local.form_dict = frappe._dict(
+				{
+					"report_name": self.report_name,
+					"file_format_type": "CSV",
+					"include_indentation": 0,
+					"visible_idx": [0, 1, 2],
+					"export_in_background": 1,
+				}
+			)
+			export_query()
+
+		subject = frappe._("Your exported report: {0}").format(self.report_name)
+		parser = Parser(policy=policy.default)
+		messages = frappe.get_all("Email Queue", pluck="message")
+		self.assertIn(subject, [parser.parsestr(message)["Subject"] for message in messages])
 
 
 def create_mock_data():

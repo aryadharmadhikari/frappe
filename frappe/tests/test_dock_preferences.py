@@ -17,6 +17,7 @@ from frappe.desk.doctype.dock.dock import (
 	destination,
 	dock_key,
 	docked_apps,
+	drop_dock_caches,
 	get_app_dock,
 	get_app_dock_layer,
 	get_app_entry_set,
@@ -47,8 +48,10 @@ from frappe.desk.doctype.sidebar.test_sidebar import (
 )
 from frappe.model.sync import remove_orphan_entities
 from frappe.tests import IntegrationTestCase
+from frappe.tests.baseline import DESK_USER, SYSTEM_MANAGER, WORKSPACE_MANAGER
+from frappe.tests.utils import cleanup_committed_test_data
 
-USER = "test-dock-prefs@example.com"
+USER = SYSTEM_MANAGER
 
 # The modules these suites arrange: their own, rather than three of the framework's. An app's
 # dock may name the framework's modules, and once an app ships one every site has a base that
@@ -356,39 +359,26 @@ class DockTestCase(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
-		frappe.set_user("Administrator")
-		cls._fixtures = ExitStack()
-		for module in TRIO:
-			cls._fixtures.enter_context(sidebarless_module(module))
-		cls._fixtures.enter_context(shipped_dock({APP: [sidebar(module) for module in TRIO]}))
+		with ExitStack() as fixtures:
+			for module in TRIO:
+				fixtures.enter_context(sidebarless_module(module))
+			fixtures.enter_context(shipped_dock({APP: [sidebar(module) for module in TRIO]}))
+			cls.addClassCleanup(cleanup_committed_test_data, fixtures.pop_all().close)
+			frappe.db.commit()
 
-	@classmethod
-	def tearDownClass(cls):
-		cls._fixtures.close()
-		super().tearDownClass()
+	def setUp(self):
+		super().setUp()
+		frappe.set_user("Administrator")
+		self.addCleanup(frappe.set_user, "Administrator")
+		frappe.db.after_rollback.add(lambda: drop_dock_caches(None))
 
 
 class TestDockPreferences(DockTestCase):
 	"""The user's own layer, on a site whose own layer names nothing."""
 
 	def setUp(self):
-		frappe.set_user("Administrator")
-		if not frappe.db.exists("User", USER):
-			frappe.get_doc(
-				{
-					"doctype": "User",
-					"email": USER,
-					"first_name": "Dock",
-					"send_welcome_email": 0,
-					"roles": [{"role": "System Manager"}],
-				}
-			).insert()
+		super().setUp()
 		frappe.set_user(USER)
-
-	def tearDown(self):
-		frappe.set_user("Administrator")
-		clear_arrangements()
-		frappe.delete_doc("User", USER, force=True, ignore_missing=True)
 
 	def test_order_round_trips(self):
 		save_user_dock(APP, payload(GAMMA, ALPHA, BETA))
@@ -463,6 +453,7 @@ class TestDockPreferences(DockTestCase):
 		user.append("block_modules", {"module": GAMMA})
 		user.save(ignore_permissions=True)
 		frappe.clear_cache(user=USER)
+		frappe.db.after_rollback.add(lambda: frappe.clear_cache(user=SYSTEM_MANAGER))
 		frappe.set_user(USER)
 
 		save_user_dock(APP, payload(ALPHA, GAMMA))
@@ -492,32 +483,8 @@ class TestDockSiteLayer(DockTestCase):
 
 	"""
 
-	MANAGER = "test-dock-manager@example.com"
-	DESK_USER = "test-dock-desk-user@example.com"
-
-	def setUp(self):
-		frappe.set_user("Administrator")
-		self.make_user(self.MANAGER, ["Desk User", "Workspace Manager"])
-		self.make_user(self.DESK_USER, ["Desk User"])
-
-	def tearDown(self):
-		frappe.set_user("Administrator")
-		clear_arrangements()
-		for email in (self.MANAGER, self.DESK_USER):
-			frappe.delete_doc("User", email, force=True, ignore_missing=True)
-
-	def make_user(self, email, roles):
-		if frappe.db.exists("User", email):
-			frappe.delete_doc("User", email, force=True, ignore_permissions=True)
-		frappe.get_doc(
-			{
-				"doctype": "User",
-				"email": email,
-				"first_name": email.split("@")[0],
-				"send_welcome_email": 0,
-				"roles": [{"role": role} for role in roles],
-			}
-		).insert(ignore_permissions=True)
+	MANAGER = WORKSPACE_MANAGER
+	READER = DESK_USER
 
 	def set_site_order(self, *rows):
 		"""The site layer as a Workspace Manager would leave it. Administrator holds every role."""
@@ -531,12 +498,13 @@ class TestDockSiteLayer(DockTestCase):
 		user.append("block_modules", {"module": module})
 		user.save(ignore_permissions=True)
 		frappe.clear_cache(user=email)
+		frappe.db.after_rollback.add(lambda: frappe.clear_cache(user=email))
 
 	# -- the merge ----------------------------------------------------------------------
 
 	def test_site_order_applies_to_a_user_who_has_arranged_nothing(self):
 		self.set_site_order(BETA, ALPHA)
-		self.assertEqual(names(dock_for(self.DESK_USER)), [BETA, ALPHA])
+		self.assertEqual(names(dock_for(self.READER)), [BETA, ALPHA])
 
 	def test_a_saved_layer_is_exactly_the_rail(self):
 		"""A user's saved layer is their rail. What they left out is not behind what they kept; it is
@@ -548,19 +516,19 @@ class TestDockSiteLayer(DockTestCase):
 		"""
 		self.set_site_order(BETA, ALPHA, GAMMA)
 
-		frappe.set_user(self.DESK_USER)
+		frappe.set_user(self.READER)
 		save_user_dock(APP, payload(GAMMA))
 
-		self.assertEqual(names(dock_for(self.DESK_USER)), [GAMMA])
+		self.assertEqual(names(dock_for(self.READER)), [GAMMA])
 
 	def test_a_user_can_unhide_what_the_site_hid(self):
 		"""Later layers win on hiding too, which is the whole reason to have a second one."""
 		self.set_site_order(sidebar(BETA, hidden=1), sidebar(ALPHA, hidden=0))
-		self.assertEqual(hidden_by_name(dock_for(self.DESK_USER))[BETA], 1)
+		self.assertEqual(hidden_by_name(dock_for(self.READER))[BETA], 1)
 
-		frappe.set_user(self.DESK_USER)
+		frappe.set_user(self.READER)
 		save_user_dock(APP, payload(sidebar(BETA, hidden=0)))
-		self.assertEqual(hidden_by_name(dock_for(self.DESK_USER))[BETA], 0)
+		self.assertEqual(hidden_by_name(dock_for(self.READER))[BETA], 0)
 
 	def test_a_module_the_site_never_named_is_absent_rather_than_appended(self):
 		"""Absence is the answer: the arrangement says what to move, not what to show.
@@ -570,7 +538,7 @@ class TestDockSiteLayer(DockTestCase):
 
 		"""
 		self.set_site_order(BETA, ALPHA)
-		self.assertEqual(names(dock_for(self.DESK_USER)), [BETA, ALPHA])
+		self.assertEqual(names(dock_for(self.READER)), [BETA, ALPHA])
 
 	def test_an_entry_the_app_adds_later_waits_to_be_added(self):
 		"""The cost of a saved layer being exactly the rail. An entry the app ships after the site has
@@ -580,20 +548,20 @@ class TestDockSiteLayer(DockTestCase):
 		"""
 		self.set_site_order(BETA, ALPHA)
 
-		self.assertEqual(names(dock_for(self.DESK_USER)), [BETA, ALPHA])
+		self.assertEqual(names(dock_for(self.READER)), [BETA, ALPHA])
 		self.assertIn(GAMMA, names(get_app_dock_layer(APP)))
 
 	def test_a_module_the_user_may_not_reach_is_absent_from_the_dock(self):
 		"""The dock is navigation reach, never a way around the module gate, at either layer."""
-		self.block_module(self.DESK_USER, GAMMA)
+		self.block_module(self.READER, GAMMA)
 		self.set_site_order(GAMMA, ALPHA)
 
-		self.assertEqual(names(dock_for(self.DESK_USER)), [ALPHA])
+		self.assertEqual(names(dock_for(self.READER)), [ALPHA])
 
 	# -- the gate -----------------------------------------------------------------------
 
 	def test_only_a_workspace_manager_may_write_the_site_layer(self):
-		frappe.set_user(self.DESK_USER)
+		frappe.set_user(self.READER)
 		self.assertRaises(frappe.PermissionError, save_site_dock, APP, payload(ALPHA))
 
 		frappe.set_user(self.MANAGER)
@@ -604,7 +572,7 @@ class TestDockSiteLayer(DockTestCase):
 	def test_only_a_workspace_manager_may_read_the_site_layer(self):
 		self.set_site_order(ALPHA)
 
-		frappe.set_user(self.DESK_USER)
+		frappe.set_user(self.READER)
 		self.assertRaises(frappe.PermissionError, get_site_dock_layer, APP)
 
 		frappe.set_user(self.MANAGER)
@@ -627,7 +595,7 @@ class TestDockSiteLayer(DockTestCase):
 
 		self.assertEqual(names(get_site_dock(APP)), [GAMMA, ALPHA])
 		self.assertEqual(names(dock_for(self.MANAGER)), [ALPHA])
-		self.assertEqual(names(dock_for(self.DESK_USER)), [GAMMA, ALPHA])
+		self.assertEqual(names(dock_for(self.READER)), [GAMMA, ALPHA])
 
 	# -- the seams the client edits through ---------------------------------------------
 
@@ -640,7 +608,7 @@ class TestDockSiteLayer(DockTestCase):
 		"""
 		self.set_site_order(BETA, ALPHA)
 
-		frappe.set_user(self.DESK_USER)
+		frappe.set_user(self.READER)
 		save_user_dock(APP, payload(ALPHA))
 
 		self.assertEqual(names(get_user_dock_layer(APP)), [ALPHA])
@@ -657,19 +625,19 @@ class TestDockSiteLayer(DockTestCase):
 		"""
 		self.set_site_order(BETA)
 
-		frappe.set_user(self.DESK_USER)
+		frappe.set_user(self.READER)
 		save_user_dock(APP, payload(added(sidebar(ALPHA))))
 		frappe.set_user("Administrator")
 
 		self.assertEqual(get_site_dock(APP), [stored(sidebar(BETA))])
-		self.assertEqual(get_user_dock(APP, self.DESK_USER), [stored(added(sidebar(ALPHA)), added=1)])
+		self.assertEqual(get_user_dock(APP, self.READER), [stored(added(sidebar(ALPHA)), added=1)])
 
 	def test_boot_carries_the_resolved_dock(self):
 		from frappe.boot import get_bootinfo
 
 		self.set_site_order(BETA, ALPHA)
 
-		frappe.set_user(self.DESK_USER)
+		frappe.set_user(self.READER)
 		carried = names(dock_rows_for_trio(get_bootinfo().get("dock")[APP]))
 		self.assertEqual(carried, [BETA, ALPHA])
 
@@ -679,14 +647,14 @@ class TestDockSiteLayer(DockTestCase):
 		"""
 		self.set_site_order(ALPHA)
 
-		frappe.set_user(self.DESK_USER)
+		frappe.set_user(self.READER)
 		save_user_dock(APP, payload(added(sidebar(BETA))))
 		frappe.set_user("Administrator")
 
 		# The two writable layers, which is what one shape per layer means. The app's own row is
 		# in this same table and is told apart by `standard`.
 		layers = frappe.get_all("Dock", filters={"standard": 0}, fields=["app", "user"])
-		self.assertEqual(sorted(row.user or "" for row in layers), ["", self.DESK_USER])
+		self.assertEqual(sorted(row.user or "" for row in layers), ["", self.READER])
 		self.assertEqual({row.app for row in layers}, {APP})
 		self.assertEqual(frappe.get_meta("Dock").get_field("items").options, "Dock Item")
 
@@ -716,25 +684,7 @@ class TestTheAppLayer(DockTestCase):
 
 	APP = "zz-dock-suite"
 	OTHER_APP = "zz-dock-suite-companion"
-	USER = "test-dock-app-layer@example.com"
-
-	def setUp(self):
-		frappe.set_user("Administrator")
-		if not frappe.db.exists("User", self.USER):
-			frappe.get_doc(
-				{
-					"doctype": "User",
-					"email": self.USER,
-					"first_name": "Dock App Layer",
-					"send_welcome_email": 0,
-					"roles": [{"role": "Desk User"}],
-				}
-			).insert(ignore_permissions=True)
-
-	def tearDown(self):
-		frappe.set_user("Administrator")
-		clear_arrangements()
-		frappe.delete_doc("User", self.USER, force=True, ignore_missing=True)
+	USER = DESK_USER
 
 	def ship(self, *items, app=None):
 		"""One app's fragment, declared for the length of the `with` block."""
@@ -1020,31 +970,8 @@ class TestWhatACustomisationMayDo(DockTestCase):
 
 	"""
 
-	MANAGER = "test-dock-may@example.com"
-	PERSON = "test-dock-may-person@example.com"
-
-	def setUp(self):
-		frappe.set_user("Administrator")
-		for email, roles in (
-			(self.MANAGER, ["Desk User", "Workspace Manager"]),
-			(self.PERSON, ["Desk User"]),
-		):
-			if not frappe.db.exists("User", email):
-				frappe.get_doc(
-					{
-						"doctype": "User",
-						"email": email,
-						"first_name": email.split("@")[0],
-						"send_welcome_email": 0,
-						"roles": [{"role": role} for role in roles],
-					}
-				).insert(ignore_permissions=True)
-
-	def tearDown(self):
-		frappe.set_user("Administrator")
-		clear_arrangements()
-		for email in (self.MANAGER, self.PERSON):
-			frappe.delete_doc("User", email, force=True, ignore_missing=True)
+	MANAGER = WORKSPACE_MANAGER
+	PERSON = DESK_USER
 
 	def make_workspace(self, title, module, roles=None):
 		doc = frappe.get_doc(
@@ -1268,24 +1195,7 @@ class TestTheRowShape(DockTestCase):
 
 	"""
 
-	USER = "test-dock-row-shape@example.com"
-
-	def setUp(self):
-		frappe.set_user("Administrator")
-		if not frappe.db.exists("User", self.USER):
-			frappe.get_doc(
-				{
-					"doctype": "User",
-					"email": self.USER,
-					"first_name": "Dock Row Shape",
-					"send_welcome_email": 0,
-					"roles": [{"role": "System Manager"}],
-				}
-			).insert(ignore_permissions=True)
-
-	def tearDown(self):
-		frappe.set_user("Administrator")
-		clear_arrangements()
+	USER = SYSTEM_MANAGER
 
 	def make_workspace(self, title, module, public=1):
 		doc = frappe.get_doc(
@@ -1395,6 +1305,7 @@ class TestTheRowShape(DockTestCase):
 		user.append("block_modules", {"module": GAMMA})
 		user.save(ignore_permissions=True)
 		frappe.clear_cache(user=self.USER)
+		frappe.db.after_rollback.add(lambda: frappe.clear_cache(user=SYSTEM_MANAGER))
 
 		save_site_dock(APP, payload(added(sidebar(GAMMA)), added(workspace(page))))
 
@@ -1468,25 +1379,7 @@ class TestTheCompanionMount(DockTestCase):
 	HOST = "zz-dock-host"
 	COMPANION = "zz-dock-companion"
 	OTHER_COMPANION = "zz-dock-companion-two"
-	USER = "test-dock-mount@example.com"
-
-	def setUp(self):
-		frappe.set_user("Administrator")
-		if not frappe.db.exists("User", self.USER):
-			frappe.get_doc(
-				{
-					"doctype": "User",
-					"email": self.USER,
-					"first_name": "Dock Mount",
-					"send_welcome_email": 0,
-					"roles": [{"role": "Desk User"}],
-				}
-			).insert(ignore_permissions=True)
-
-	def tearDown(self):
-		frappe.set_user("Administrator")
-		clear_arrangements()
-		frappe.delete_doc("User", self.USER, force=True, ignore_missing=True)
+	USER = DESK_USER
 
 	def host_and_companion(self, host_rows=None, companion_rows=None, mount_on=None):
 		return shipped_dock(
@@ -1618,24 +1511,7 @@ class TestAnAppWithNoDock(DockTestCase):
 	"""
 
 	APP = "zz-dock-none"
-	USER = "test-dock-none@example.com"
-
-	def setUp(self):
-		frappe.set_user("Administrator")
-		if not frappe.db.exists("User", self.USER):
-			frappe.get_doc(
-				{
-					"doctype": "User",
-					"email": self.USER,
-					"first_name": "Dock None",
-					"send_welcome_email": 0,
-					"roles": [{"role": "Desk User"}],
-				}
-			).insert(ignore_permissions=True)
-
-	def tearDown(self):
-		frappe.set_user("Administrator")
-		clear_arrangements()
+	USER = DESK_USER
 
 	def test_an_app_with_no_record_resolves_to_zero_entries(self):
 		with shipped_dock({self.APP: []}):
@@ -1893,10 +1769,6 @@ class TestTheExportRoad(IntegrationTestCase):
 	The app used here is invented, so nothing is written into a real app on the bench: the export is
 	pointed at a temporary directory standing in for `frappe.get_app_path(app)`.
 
-	It is not a `DockTestCase`, and its modules are its own. `remove_orphan_entities` commits, so
-	anything this suite writes outlives the framework's rollback, which means the fixtures have to be
-	torn down by hand and cannot be the shared class-level ones the other suites use.
-
 	"""
 
 	APP = "zz-dock-export"
@@ -1913,18 +1785,11 @@ class TestTheExportRoad(IntegrationTestCase):
 		self.make_modules()
 
 	def tearDown(self):
-		"""Clean up by hand and before the commit, not through `addCleanup`.
-
-		`remove_orphan_entities` commits, so everything this suite has written is already durable by
-		the time a test ends. Cleanups run after `tearDown`, so anything deleted there would be
-		deleted after the commit that was supposed to make the deletion stick.
-
-		"""
 		frappe.set_user("Administrator")
 		frappe.delete_doc("User", self.DESK_USER, force=True, ignore_missing=True)
 		clear_arrangements_for(self.APP)
 		self.drop_modules()
-		frappe.db.commit()  # nosemgrep
+		super().tearDown()
 
 	def make_modules(self):
 		self.drop_modules()
@@ -2150,7 +2015,8 @@ class TestTheExportRoad(IntegrationTestCase):
 		mark_as_standard(self.APP)
 
 		shutil.rmtree(os.path.dirname(self.exported()))
-		remove_orphan_entities(["Dock"])
+		with patch.object(frappe.db, "commit"):
+			remove_orphan_entities(["Dock"])
 
 		self.assertFalse(frappe.db.exists("Dock", {"app": self.APP, "standard": 1}))
 
@@ -2160,7 +2026,8 @@ class TestTheExportRoad(IntegrationTestCase):
 		self.author(self.ONE)
 		save_user_dock(self.APP, payload(added(sidebar(self.TWO))))
 
-		remove_orphan_entities(["Dock"])
+		with patch.object(frappe.db, "commit"):
+			remove_orphan_entities(["Dock"])
 
 		self.assertTrue(frappe.db.exists("Dock", {"app": self.APP, "standard": 0, "user": ""}))
 
@@ -2281,6 +2148,7 @@ class TestAddModule(IntegrationTestCase):
 		frappe.delete_doc("Module Def", self.MODULE, force=True, ignore_missing=True)
 		for email in (self.MANAGER, self.CURATOR, self.DESK_USER):
 			frappe.delete_doc("User", email, force=True, ignore_missing=True)
+		super().tearDown()
 
 	def save(self, icon=None):
 		row = {"link_type": "Sidebar", "link_to": self.MODULE, "title": self.MODULE, "added": 1}

@@ -3,7 +3,7 @@ import frappe
 from .classes import *
 from .classes.context_managers import *
 
-global_test_dependencies = ["User"]
+global_test_dependencies = ["User", "Salutation"]
 
 from frappe.deprecation_dumpster import (
 	tests_get_system_setting as get_system_setting,

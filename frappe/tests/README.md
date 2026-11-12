@@ -53,6 +53,23 @@ This class extends `UnitTestCase` and is designed for integration testing. It pr
 - Context managers that depend on a site connection
 - Asserts that depend on a site connection
 
+The base `tearDown()` rolls back uncommitted changes after each test. Create fresh fixtures in
+`setUp()` or in the test that uses them. If you override `tearDown()`, call `super().tearDown()`
+after any custom cleanup that needs the test's database changes.
+
+**Database commits in tests**
+
+- Build shared master data in runner setup and commit it as the baseline. Reuse
+  records by name and leave ordinary test writes in the transaction.
+- Keep expensive fixtures used by one class in its test file. Build them once in
+  class setup and remove any committed records in class cleanup.
+- Within a test, commit only when a separate connection, request, or worker must
+  read its writes, or when the test checks a real transaction boundary.
+- Register cleanup before publishing a fixture. Wait for any worker, roll back pending
+  writes, and commit only the deletion or restoration of the test's durable changes.
+- Keep schema changes scoped to test-owned tables or columns. Some schema operations
+  and truncates commit even when the test does not call `frappe.db.commit()`.
+
 For a detailed list of context managers, please refer to the code.
 
 ### Utility Functions and Generators ([`utils/generators.py`](./utils/generators.py))

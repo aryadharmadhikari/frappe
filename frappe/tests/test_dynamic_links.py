@@ -51,10 +51,13 @@ class TestDynamicLinks(IntegrationTestCase):
 		)
 
 	def test_custom_fields(self):
-		from frappe.utils.testutils import add_custom_field, clear_custom_fields
+		from frappe.tests.utils import cleanup_committed_test_data
+		from frappe.utils.testutils import add_custom_field
 
-		add_custom_field("Event", "test_ref_doc", "Link", "DocType")
-		add_custom_field("Event", "test_ref_name", "Dynamic Link", "test_ref_doc")
+		fields = ("test_ref_doc", "test_ref_name")
+		self.addCleanup(cleanup_committed_test_data, self.remove_event_fields, fields)
+		add_custom_field("Event", fields[0], "Link", "DocType")
+		add_custom_field("Event", fields[1], "Dynamic Link", fields[0])
 
 		unsub = frappe.get_doc(
 			{"doctype": "Email Unsubscribe", "email": "test@example.com", "global_unsubscribe": 1}
@@ -79,5 +82,10 @@ class TestDynamicLinks(IntegrationTestCase):
 
 		unsub.delete()
 
-		clear_custom_fields("Event")
-		frappe.db.commit()  # undo changes done by DDL
+	def remove_event_fields(self, fields):
+		for field in fields:
+			frappe.delete_doc_if_exists("Custom Field", f"Event-{field}", force=True)
+		columns = [field for field in fields if frappe.db.has_column("Event", field)]
+		if columns:
+			frappe.db.drop_columns("Event", columns)
+		frappe.clear_cache(doctype="Event")

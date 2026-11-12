@@ -59,9 +59,9 @@ class AutomationRunnerTestCase(IntegrationTestCase):
 		clear_automation_cache()
 
 	def tearDown(self):
-		frappe.db.rollback()
 		frappe.local.automation_actions = None
 		clear_automation_cache()
+		super().tearDown()
 
 	def queue_row(self, automation, ref_name, depth=1, ref_doctype="ToDo", payload=None):
 		row = frappe.get_doc(

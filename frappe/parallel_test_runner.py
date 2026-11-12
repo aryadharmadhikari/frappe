@@ -12,7 +12,7 @@ import click
 import requests
 
 import frappe
-from frappe.tests.utils import make_test_records, toggle_test_mode
+from frappe.tests.utils import make_test_baseline, toggle_test_mode
 
 from .testing.result import TestResult
 
@@ -24,6 +24,9 @@ TEST_WEIGHT_OVERRIDES = {
 	# XXX: command tests are significantly overweight, need a better heuristic than test count
 	# Possible better solution: stats from previous test runs.
 	"test_commands.py": 10,
+	"test_custom_sidebar.py": 3,
+	"test_module_onboarding.py": 5,
+	"test_sidebar.py": 2,
 }
 
 
@@ -77,11 +80,7 @@ class ParallelTestRunner:
 		for fn in frappe.get_hooks("before_tests", app_name=self.app):
 			frappe.get_attr(fn)()
 
-		test_module = frappe.get_module(f"{self.app}.tests")
-
-		if hasattr(test_module, "global_test_dependencies"):
-			for doctype in test_module.global_test_dependencies:
-				make_test_records(doctype, commit=True)
+		make_test_baseline(self.app)
 
 		elapsed = time.monotonic() - start_time
 		elapsed = click.style(f" ({elapsed:.03}s)", fg="red")
@@ -102,13 +101,12 @@ class ParallelTestRunner:
 	def retry_failed(self):
 		"""Run the failed tests again in this process, without a new setup, and keep the result of their last run."""
 		for _ in range(self.retries):
-			failed = [test for test, _ in self.test_result.failures + self.test_result.errors]
+			failed = self._failed_test_cases()
 			if not failed or not all(hasattr(test, "_testMethodName") for test in failed):
 				return
 			names = [test.id() for test in failed]
 			first_error = {
-				test.id(): (trace.strip().splitlines() or [""])[-1]
-				for test, trace in self.test_result.failures + self.test_result.errors
+				test.id(): (trace.strip().splitlines() or [""])[-1] for test, trace in failed.items()
 			}
 			self.test_result.printErrors()
 			click.echo(self.test_result)
@@ -120,10 +118,16 @@ class ParallelTestRunner:
 			self.test_result.startTestRun()
 			unittest.TestLoader().loadTestsFromNames(names)(self.test_result)
 			self.test_result.stopTestRun()
-			still = {test.id() for test, _ in self.test_result.failures + self.test_result.errors}
+			still = {test.id() for test in self._failed_test_cases()}
 			if flaky := [name for name in names if name not in still]:
 				click.secho(f"Flaky, passed when run again: {', '.join(flaky)}", fg="yellow")
 				report_flaky({name: first_error[name] for name in flaky})
+
+	def _failed_test_cases(self):
+		return {
+			getattr(test, "test_case", test): trace
+			for test, trace in self.test_result.failures + self.test_result.errors
+		}
 
 	def run_tests_for_file(self, file_info):
 		if not file_info:

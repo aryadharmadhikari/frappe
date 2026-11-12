@@ -103,7 +103,7 @@ def wants_new_record(row) -> bool:
 	return not (row.target_value or "").strip() and bool(cint(row.create_new) and cint(row.can_create))
 
 
-def create_missing_link_records(data_import) -> None:
+def create_missing_link_records(data_import, *, commit=True) -> None:
 	"""Insert the Link records the user chose to create, before any row is imported.
 
 	A record that fails to insert is left out; its rows then fail with the usual link error.
@@ -117,16 +117,25 @@ def create_missing_link_records(data_import) -> None:
 		fieldname = get_create_field(row.link_doctype)
 		if not fieldname or frappe.db.exists(row.link_doctype, value):
 			continue
+		if not commit:
+			frappe.db.savepoint("data_import_link")
 		try:
 			frappe.get_doc({"doctype": row.link_doctype, fieldname: value}).insert()
-			frappe.db.commit()
+			if commit:
+				frappe.db.commit()
 		except Exception:
-			frappe.db.rollback()
+			if commit:
+				frappe.db.rollback()
+			else:
+				frappe.db.rollback(save_point="data_import_link")
 			frappe.clear_messages()
 			frappe.logger("data_import").error(
 				f"Data Import {data_import.name}: could not create {row.link_doctype} {value}",
 				exc_info=True,
 			)
+		finally:
+			if not commit:
+				frappe.db.release_savepoint("data_import_link")
 
 
 def all_rows_skipped(row, skipped_rows: set[int]) -> bool:

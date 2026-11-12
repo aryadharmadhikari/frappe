@@ -32,8 +32,8 @@ class TestOutbox(IntegrationTestCase):
 		self.automation = make_automation()
 
 	def tearDown(self):
-		frappe.db.rollback()
 		clear_automation_cache()
+		super().tearDown()
 
 	def test_dedup_upsert_keeps_one_pending_row(self):
 		first = queue_trigger(self.automation, "ToDo", "TODO-1")

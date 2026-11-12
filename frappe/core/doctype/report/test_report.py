@@ -13,6 +13,7 @@ from frappe.desk.query_report import add_total_row, run, save_report
 from frappe.desk.reportview import delete_report
 from frappe.desk.reportview import save_report as _save_report
 from frappe.tests import IntegrationTestCase
+from frappe.tests.baseline import SYSTEM_MANAGER, WEBSITE_MANAGER
 
 EXTRA_TEST_RECORD_DEPENDENCIES = ["User"]
 
@@ -195,8 +196,6 @@ class TestReport(IntegrationTestCase):
 		)
 
 	def test_saved_report_with_multiple_group_by_runs_as_user(self):
-		user = create_user("test_report_group_by@example.com", "System Manager")
-
 		def save(name, group_by, fields):
 			settings = {
 				"filters": [],
@@ -206,7 +205,7 @@ class TestReport(IntegrationTestCase):
 			}
 			return frappe.get_doc("Report", _save_report(name, "User", json.dumps(settings)))
 
-		with self.set_user(user.name):
+		with self.set_user(SYSTEM_MANAGER):
 			report = save(
 				"Test Multi Group By",
 				{
@@ -372,8 +371,7 @@ class TestReport(IntegrationTestCase):
 			).insert()
 
 			# Check for PermissionError
-			create_user("test_report_owner@example.com", "Website Manager")
-			frappe.set_user("test_report_owner@example.com")
+			frappe.set_user(WEBSITE_MANAGER)
 			self.assertRaises(frappe.PermissionError, delete_report, report.name)
 
 			# Check for Report Type
@@ -671,27 +669,22 @@ result = [
 		self.assertEqual(prepared_report_watcher_targets(), [])
 
 	def test_toggle_disabled(self):
-		"""Make sure that authorization is respected."""
-		# Assuming that there will be reports in the system.
-		reports = frappe.get_all(doctype="Report", limit=1)
-		report_name = reports[0]["name"]
-		doc = frappe.get_doc("Report", report_name)
-		status = doc.disabled
+		report = frappe.get_doc(
+			doctype="Report",
+			report_name="Test Report Status Toggle",
+			report_type="Report Builder",
+			ref_doctype="ToDo",
+			is_standard="No",
+			disabled=0,
+		).insert()
 
-		# User has write permission on reports and should pass through
-		frappe.set_user("test@example.com")
-		doc.toggle_disable(not status)
-		doc.reload()
-		self.assertNotEqual(status, doc.disabled)
+		with self.set_user(SYSTEM_MANAGER):
+			report.toggle_disable(True)
+		self.assertTrue(report.reload().disabled)
 
-		# User has no write permission on reports, permission error is expected.
-		frappe.set_user("test1@example.com")
-		doc = frappe.get_doc("Report", report_name)
-		with self.assertRaises(frappe.exceptions.ValidationError):
-			doc.toggle_disable(1)
-
-		# Set user back to administrator
-		frappe.set_user("Administrator")
+		with self.set_user(WEBSITE_MANAGER), self.assertRaises(frappe.ValidationError):
+			report.toggle_disable(False)
+		self.assertTrue(report.reload().disabled)
 
 	def test_default_print_format_accepts_jinja_and_js(self):
 		"""Report print formats may be authored in either templating language."""
@@ -838,10 +831,9 @@ result = [
 				}
 			).insert(ignore_permissions=True)
 
-			unpermitted = create_user("test_read_blocked@example.com", "Website Manager")
 			permitted = create_user("test_read_allowed@example.com", role)
 
-			with self.set_user(unpermitted.email):
+			with self.set_user(WEBSITE_MANAGER):
 				with self.assertRaises(frappe.PermissionError):
 					frappe.get_doc("Report", report_name, check_permission=True)
 
@@ -873,10 +865,9 @@ result = [
 				}
 			).insert(ignore_permissions=True)
 
-			unpermitted = create_user("test_list_blocked@example.com", "Website Manager")
 			permitted = create_user("test_list_allowed@example.com", role)
 
-			with self.set_user(unpermitted.email):
+			with self.set_user(WEBSITE_MANAGER):
 				results = frappe.get_list("Report", filters={"name": report_name}, fields=["name", "query"])
 				self.assertEqual(results, [])
 

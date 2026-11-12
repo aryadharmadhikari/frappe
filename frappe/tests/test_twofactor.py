@@ -2,11 +2,13 @@
 # License: MIT. See LICENSE
 import datetime
 import time
+from unittest.mock import patch
 
 import pyotp
 
 import frappe
 from frappe.auth import HTTPRequest, get_login_attempt_tracker, validate_ip_address
+from frappe.core.doctype.system_settings.system_settings import clear_system_settings_cache
 from frappe.tests import IntegrationTestCase
 from frappe.twofactor import (
 	ExpiredLoginException,
@@ -28,6 +30,8 @@ from frappe.utils import cint, set_request
 
 class TestTwoFactor(IntegrationTestCase):
 	def setUp(self):
+		super().setUp()
+		self.enterContext(patch.object(frappe.db, "commit"))
 		self.http_requests = create_http_request()
 		self.login_manager = frappe.local.login_manager
 		self.user = self.login_manager.user
@@ -37,8 +41,10 @@ class TestTwoFactor(IntegrationTestCase):
 	def tearDown(self):
 		frappe.local.response["verification"] = None
 		frappe.local.response["tmp_id"] = None
-		disable_2fa()
+		super().tearDown()
 		frappe.clear_cache(user=self.user)
+		clear_system_settings_cache()
+		frappe.local.system_settings = None
 
 	def test_should_run_2fa(self):
 		"""Should return true if enabled."""
@@ -284,7 +290,6 @@ def enable_2fa(bypass_two_factor_auth=0, bypass_restrict_ip_check=0):
 	system_settings.two_factor_method = "OTP App"
 	system_settings.flags.ignore_mandatory = True
 	system_settings.save(ignore_permissions=True)
-	frappe.db.commit()
 
 
 def disable_2fa():
@@ -292,7 +297,6 @@ def disable_2fa():
 	system_settings.enable_two_factor_auth = 0
 	system_settings.flags.ignore_mandatory = True
 	system_settings.save(ignore_permissions=True)
-	frappe.db.commit()
 
 
 def toggle_2fa_all_role(state=None):
@@ -304,7 +308,6 @@ def toggle_2fa_all_role(state=None):
 
 	all_role.two_factor_auth = cint(state)
 	all_role.save(ignore_permissions=True)
-	frappe.db.commit()
 
 
 def get_otp(user):

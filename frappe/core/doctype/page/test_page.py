@@ -26,7 +26,7 @@ class TestPage(IntegrationTestCase):
 		page = frappe.new_doc("Page", page_name=frappe.generate_hash(), module="Core").insert()
 
 		page.delete()
-		frappe.db.commit()
+		frappe.db.after_commit.run()
 
 		module_path = frappe.get_module_path(page.module)
 		dir_path = os.path.join(module_path, "page", frappe.scrub(page.name))

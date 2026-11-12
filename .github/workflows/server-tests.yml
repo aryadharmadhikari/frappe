@@ -168,18 +168,15 @@ jobs:
           bench --site test_site --force restore ${GITHUB_WORKSPACE}/$(basename "$DB_ARTIFACT_URL")
 
           function update_to_version() {
-              version="$1"
-              python_version="${2:-3.14}"
+              local version="$1" python_version="${2:-3.14}" ref
 
               if [ -z "$version" ]; then
                   ref="${{ github.sha }}"
               else
-                  ref="version-$version-hotfix"
+                  git -C apps/frappe fetch --depth 1 https://github.com/frappe/frappe.git "version-$version-hotfix"
+                  ref=FETCH_HEAD
               fi
 
-              echo "Updating to $ref"
-
-              git -C apps/frappe fetch --depth 1 upstream "$ref":"$ref"
               git -C apps/frappe checkout --quiet --force "$ref"
 
               if pgrep honcho > /dev/null; then

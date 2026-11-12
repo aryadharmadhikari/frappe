@@ -70,6 +70,7 @@ class TestInstallAppOrdering(IntegrationTestCase):
 		self.addCleanup(self.uninstall_fake_app)
 
 	def uninstall_fake_app(self):
+		frappe.db.rollback()
 		frappe.flags.in_install = False
 		remove_from_installed_apps(FAKE_APP)
 

@@ -14,9 +14,7 @@ from frappe.utils import get_test_client
 class TestTwoFactorLogin(IntegrationTestCase):
 	"""HTTP requests use separate database connections, so fixtures and cleanup require commits."""
 
-	user = "twofactor-login@example.com"
 	password = "TwoFactor-login-43A1W"
-	role = "_Test Two Factor Login"
 
 	def setUp(self):
 		super().setUp()
@@ -34,6 +32,9 @@ class TestTwoFactorLogin(IntegrationTestCase):
 				commit=True,
 			)
 		)
+		suffix = frappe.generate_hash(length=8)
+		self.user = f"twofactor-login-{suffix}@example.com"
+		self.role = f"_Test Two Factor Login {suffix}"
 		self.client = get_test_client(use_cookies=False)
 		self.tmp_ids = []
 		self.addCleanup(self.cleanup_login)

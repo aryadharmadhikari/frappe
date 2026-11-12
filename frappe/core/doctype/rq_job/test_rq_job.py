@@ -208,7 +208,7 @@ class TestRQJob(IntegrationTestCase):
 		frappe.enqueue(self.BG_JOB, enqueue_after_commit=True, job_id=job_id)
 		self.assertIsNone(get_job_status(job_id))
 
-		frappe.db.commit()
+		frappe.db.after_commit.run()
 		self.assertIsNotNone(get_job_status(job_id))
 
 		job_id = frappe.generate_hash()
@@ -218,7 +218,7 @@ class TestRQJob(IntegrationTestCase):
 		frappe.db.rollback()
 		self.assertIsNone(get_job_status(job_id))
 
-		frappe.db.commit()
+		frappe.db.after_commit.run()
 		self.assertIsNone(get_job_status(job_id))
 
 	@requires_test_service(TestService.BACKGROUND_WORKER)

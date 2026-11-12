@@ -37,8 +37,8 @@ class TestRegistry(IntegrationTestCase):
 		clear_automation_cache()
 
 	def tearDown(self):
-		frappe.db.rollback()
 		clear_automation_cache()
+		super().tearDown()
 
 	def test_build_returns_only_enabled(self):
 		make_rule(title="on", enabled=1)

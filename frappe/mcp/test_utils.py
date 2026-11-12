@@ -7,6 +7,7 @@ import frappe
 from frappe.core.doctype.user.user import generate_keys
 from frappe.tests import IntegrationTestCase
 from frappe.tests.test_api import make_request
+from frappe.tests.utils import cleanup_committed_test_data
 from frappe.utils import get_test_client
 
 
@@ -19,7 +20,8 @@ class McpTestCase(IntegrationTestCase):
 
 	def create_user(self, first_name):
 		if not frappe.db.exists("Role", "MCP Desk Tester"):
-			frappe.get_doc(doctype="Role", role_name="MCP Desk Tester", desk_access=1).insert()
+			role = frappe.get_doc(doctype="Role", role_name="MCP Desk Tester", desk_access=1).insert()
+			self.addCleanup(cleanup_committed_test_data, frappe.delete_doc_if_exists, "Role", role.name)
 		user = f"mcp.{frappe.generate_hash(length=10)}@example.com"
 		frappe.get_doc(
 			doctype="User",
@@ -34,8 +36,7 @@ class McpTestCase(IntegrationTestCase):
 
 	def delete_user(self, user):
 		frappe.set_user("Administrator")
-		frappe.delete_doc_if_exists("User", user)
-		frappe.db.commit()  # nosemgrep
+		cleanup_committed_test_data(frappe.delete_doc_if_exists, "User", user)
 
 	def request(self, payload=None, *, method="POST", headers=None, body=None, path="/api/v2/mcp", auth=True):
 		request_headers = {"Content-Type": "application/json", "Accept": "application/json"}

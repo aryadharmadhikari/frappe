@@ -3,27 +3,19 @@
 import json
 import time
 import unittest
-from contextlib import contextmanager
 
 import frappe
 from frappe.core.doctype.prepared_report.prepared_report import delete_prepared_reports
 from frappe.desk.query_report import generate_report_result, get_prepared_report_result, get_report_doc
 from frappe.tests import IntegrationTestCase, timeout
+from frappe.tests.utils import cleanup_committed_test_data, wait_for_job
 from frappe.tests.utils.test_capabilities import TestService, requires_test_service
 
 
 @requires_test_service(TestService.BACKGROUND_WORKER)
 class TestPreparedReport(IntegrationTestCase):
-	@classmethod
-	def tearDownClass(cls):
-		for r in frappe.get_all("Prepared Report", pluck="name"):
-			frappe.delete_doc("Prepared Report", r, force=True, delete_permanently=True)
-
-		frappe.db.commit()
-
 	@timeout(seconds=20)
 	def wait_for_status(self, report, status):
-		frappe.db.commit()  # Flush changes first
 		while True:
 			frappe.db.rollback()  # read new data
 			report.reload()
@@ -40,9 +32,36 @@ class TestPreparedReport(IntegrationTestCase):
 		).insert()
 
 		if commit:
-			frappe.db.commit()
+			self.addCleanup(self.delete_published_report, doc.name)
+			frappe.db.commit()  # nosemgrep
 
 		return doc
+
+	def delete_published_report(self, name):
+		frappe.db.rollback()
+		filters = {"ref_doctype": "Prepared Report", "ref_docname": name}
+		tasks = frappe.get_all("Background Task", filters=filters, fields=["name", "job_id"])
+		for task in tasks:
+			if task.job_id:
+				wait_for_job(task.job_id, wait_timeout=20)
+		cleanup_committed_test_data(self.delete_report_and_tasks, name, tasks)
+
+	@staticmethod
+	def delete_report_and_tasks(name, tasks):
+		for task in tasks:
+			frappe.delete_doc("Background Task", task.name, delete_permanently=True)
+		frappe.delete_doc("Prepared Report", name, force=True, delete_permanently=True)
+
+	def create_report(self, **fields):
+		report = frappe.new_doc("Report", report_name=frappe.generate_hash(), ref_doctype="ToDo", **fields)
+		self.addCleanup(
+			cleanup_committed_test_data,
+			frappe.delete_doc_if_exists,
+			"Report",
+			report.report_name,
+			delete_permanently=True,
+		)
+		return report.insert()
 
 	def test_queueing(self):
 		doc = self.create_prepared_report()
@@ -51,7 +70,6 @@ class TestPreparedReport(IntegrationTestCase):
 
 		self.wait_for_status(doc, "Completed")
 
-		doc = frappe.get_last_doc("Prepared Report")
 		self.assertTrue(doc.job_id)
 		self.assertTrue(doc.report_end_time)
 
@@ -66,17 +84,17 @@ class TestPreparedReport(IntegrationTestCase):
 		self.assertEqual(len(prepared_data), len(generated_data))
 
 	def test_failed_report_is_surfaced(self):
-		with test_report(report_type="Query Report", query="select * from `tabNoSuchTable`") as report:
-			doc = self.create_prepared_report(report.name)
-			self.wait_for_status(doc, "Error")
-			self.assertTrue(doc.error_message)
+		report = self.create_report(report_type="Query Report", query="select * from `tab_no_such_table`")
+		doc = self.create_prepared_report(report.name)
+		self.wait_for_status(doc, "Error")
+		self.assertTrue(doc.error_message)
 
-			result = get_prepared_report_result(get_report_doc(report.name), {}, dn=doc.name)
-			self.assertEqual("Error", result["doc"].status)
-			# the reader gets the message, the traceback stays on the document
-			self.assertIn("tabNoSuchTable", result["error"])
-			self.assertNotIn("Traceback", result["error"])
-			self.assertIsNone(result["doc"].error_message)
+		result = get_prepared_report_result(get_report_doc(report.name), {}, dn=doc.name)
+		self.assertEqual("Error", result["doc"].status)
+		# the reader gets the message, the traceback stays on the document
+		self.assertIn("tab_no_such_table", result["error"])
+		self.assertNotIn("Traceback", result["error"])
+		self.assertIsNone(result["doc"].error_message)
 
 	def test_deleting_unreadable_report_raises(self):
 		doc = self.create_prepared_report(commit=False)
@@ -93,15 +111,15 @@ class TestPreparedReport(IntegrationTestCase):
 			query = "select pg_sleep(5)"
 		elif frappe.db.db_type == "mariadb":
 			query = "select sleep(5)"
-		with test_report(report_type="Query Report", query=query) as report:
-			doc = self.create_prepared_report(report.name)
-			self.wait_for_status(doc, "Started")
-			job_id = doc.job_id
+		report = self.create_report(report_type="Query Report", query=query)
+		doc = self.create_prepared_report(report.name)
+		self.wait_for_status(doc, "Started")
+		job_id = doc.job_id
 
-			doc.delete()
-			time.sleep(1)
-			job = frappe.get_doc("RQ Job", job_id)
-			self.assertEqual(job.status, "stopped")
+		doc.delete()
+		wait_for_job(job_id)
+		job = frappe.get_doc("RQ Job", job_id)
+		self.assertEqual(job.status, "stopped")
 
 	@unittest.skipIf(
 		frappe.conf.db_type == "sqlite",
@@ -114,33 +132,17 @@ class TestPreparedReport(IntegrationTestCase):
 			query = "select pg_sleep(5)"
 		elif frappe.db.db_type == "mariadb":
 			query = "select sleep(5)"
-		with test_report(report_type="Query Report", query=query) as report:
-			doc = self.create_prepared_report(report.name)
-			self.wait_for_status(doc, "Started")
-			bg_task = frappe.get_all(
-				"Background Task", {"ref_doctype": "Prepared Report", "ref_docname": doc.name}, pluck="name"
-			)
-			self.assertEqual(len(bg_task), 1)
+		report = self.create_report(report_type="Query Report", query=query)
+		doc = self.create_prepared_report(report.name)
+		self.wait_for_status(doc, "Started")
+		bg_task = frappe.get_all(
+			"Background Task", {"ref_doctype": "Prepared Report", "ref_docname": doc.name}, pluck="task_id"
+		)
+		self.assertEqual(len(bg_task), 1)
 
-			stop_task(bg_task[0])
+		stop_task(bg_task[0])
 
-			self.wait_for_status(doc, "Cancelled")
-			time.sleep(1)
-			job = frappe.get_doc("RQ Job", doc.job_id)
-			self.assertEqual(job.status, "stopped")
-
-
-@contextmanager
-def test_report(**args):
-	try:
-		report = frappe.new_doc("Report")
-		report.update(args)
-		if not report.report_name:
-			report.report_name = frappe.generate_hash()
-		if not report.ref_doctype:
-			report.ref_doctype = "ToDo"
-		report.insert()
-		frappe.db.commit()
-		yield report
-	finally:
-		report.delete()
+		self.assertEqual(doc.reload().status, "Cancelled")
+		wait_for_job(doc.job_id)
+		job = frappe.get_doc("RQ Job", doc.job_id)
+		self.assertEqual(job.status, "stopped")

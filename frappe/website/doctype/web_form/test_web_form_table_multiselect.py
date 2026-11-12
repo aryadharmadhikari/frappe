@@ -4,7 +4,7 @@ import json
 
 import frappe
 from frappe.core.doctype.doctype.doctype import clear_permissions_cache
-from frappe.core.doctype.doctype.test_doctype import new_doctype
+from frappe.core.doctype.doctype.test_doctype import insert_test_doctype, new_doctype
 from frappe.permissions import add_permission, reset_perms
 from frappe.tests import IntegrationTestCase
 from frappe.website.doctype.web_form.web_form import (
@@ -14,117 +14,137 @@ from frappe.website.doctype.web_form.web_form import (
 	has_link_option,
 )
 
-TARGET = "Test WF MultiSelect Target"
-ROW = "Test WF MultiSelect Row"
-PARENT = "Test WF MultiSelect Parent"
-NUMBERED = "Test WF MultiSelect Numbered"
-NUMBERED_ROW = "Test WF MultiSelect Numbered Row"
-UNTITLED = "Test WF MultiSelect Untitled"
-UNTITLED_ROW = "Test WF MultiSelect Untitled Row"
-
 
 class TestWebFormTableMultiSelect(IntegrationTestCase):
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		new_doctype(
-			TARGET,
-			fields=[{"fieldname": "title", "fieldtype": "Data", "label": "Title", "unique": 1}],
-			autoname="field:title",
-		).insert(ignore_if_duplicate=True)
-		new_doctype(
-			ROW,
-			istable=1,
-			permissions=[],
-			fields=[{"fieldname": "target", "fieldtype": "Link", "label": "Target", "options": TARGET}],
-		).insert(ignore_if_duplicate=True)
-		# integer names shown by title: the branch that ships raw JSON
-		new_doctype(
-			NUMBERED,
-			fields=[{"fieldname": "title", "fieldtype": "Data", "label": "Title"}],
-			autoname="autoincrement",
-			title_field="title",
-			show_title_field_in_link=1,
-		).insert(ignore_if_duplicate=True)
-		new_doctype(
-			NUMBERED_ROW,
-			istable=1,
-			permissions=[],
-			fields=[{"fieldname": "target", "fieldtype": "Link", "label": "Target", "options": NUMBERED}],
-		).insert(ignore_if_duplicate=True)
-		# integer names with no title field: the branch that ships a joined string
-		new_doctype(
-			UNTITLED,
-			fields=[{"fieldname": "note", "fieldtype": "Data", "label": "Note"}],
-			autoname="autoincrement",
-		).insert(ignore_if_duplicate=True)
-		new_doctype(
-			UNTITLED_ROW,
-			istable=1,
-			permissions=[],
-			fields=[{"fieldname": "target", "fieldtype": "Link", "label": "Target", "options": UNTITLED}],
-		).insert(ignore_if_duplicate=True)
-		new_doctype(
-			PARENT,
-			fields=[
-				{"fieldname": "title", "fieldtype": "Data", "label": "Title"},
-				{
-					"fieldname": "targets",
-					"fieldtype": "Table MultiSelect",
-					"label": "Targets",
-					"options": ROW,
-				},
-				{
-					"fieldname": "numbers",
-					"fieldtype": "Table MultiSelect",
-					"label": "Numbers",
-					"options": NUMBERED_ROW,
-				},
-				{
-					"fieldname": "untitled",
-					"fieldtype": "Table MultiSelect",
-					"label": "Untitled",
-					"options": UNTITLED_ROW,
-				},
-			],
-		).insert(ignore_if_duplicate=True)
-
-		for title in ("Alpha", "Beta", "Gamma"):
-			frappe.get_doc(doctype=TARGET, title=title).insert(ignore_if_duplicate=True)
-
-		cls.numbered_names = [
-			str(frappe.get_doc(doctype=NUMBERED, title=title).insert().name) for title in ("One", "Two")
-		]
-		cls.untitled_names = [
-			str(frappe.get_doc(doctype=UNTITLED, note=note).insert().name) for note in ("First", "Second")
-		]
-
-	@classmethod
-	def tearDownClass(cls):
-		frappe.db.rollback()
-		for doctype in (PARENT, ROW, TARGET, NUMBERED_ROW, NUMBERED, UNTITLED_ROW, UNTITLED):
-			frappe.delete_doc("DocType", doctype, force=True)
-		super().tearDownClass()
-
 	def setUp(self):
+		super().setUp()
 		frappe.set_user("Administrator")
 		frappe.local.request = None
+		suffix = frappe.generate_hash(length=8)
+		self.target = f"Test WF MultiSelect Target {suffix}"
+		self.row = f"Test WF MultiSelect Row {suffix}"
+		self.parent = f"Test WF MultiSelect Parent {suffix}"
+		self.numbered = f"Test WF MultiSelect Numbered {suffix}"
+		self.numbered_row = f"Test WF MultiSelect Numbered Row {suffix}"
+		self.untitled = f"Test WF MultiSelect Untitled {suffix}"
+		self.untitled_row = f"Test WF MultiSelect Untitled Row {suffix}"
+
+		insert_test_doctype(
+			self,
+			new_doctype(
+				self.target,
+				fields=[{"fieldname": "title", "fieldtype": "Data", "label": "Title", "unique": 1}],
+				autoname="field:title",
+			),
+		)
+		insert_test_doctype(
+			self,
+			new_doctype(
+				self.row,
+				istable=1,
+				permissions=[],
+				fields=[
+					{"fieldname": "target", "fieldtype": "Link", "label": "Target", "options": self.target}
+				],
+			),
+		)
+		# integer names shown by title: the branch that ships raw JSON
+		insert_test_doctype(
+			self,
+			new_doctype(
+				self.numbered,
+				fields=[{"fieldname": "title", "fieldtype": "Data", "label": "Title"}],
+				autoname="autoincrement",
+				title_field="title",
+				show_title_field_in_link=1,
+			),
+		)
+		insert_test_doctype(
+			self,
+			new_doctype(
+				self.numbered_row,
+				istable=1,
+				permissions=[],
+				fields=[
+					{"fieldname": "target", "fieldtype": "Link", "label": "Target", "options": self.numbered}
+				],
+			),
+		)
+		# integer names with no title field: the branch that ships a joined string
+		insert_test_doctype(
+			self,
+			new_doctype(
+				self.untitled,
+				fields=[{"fieldname": "note", "fieldtype": "Data", "label": "Note"}],
+				autoname="autoincrement",
+			),
+		)
+		insert_test_doctype(
+			self,
+			new_doctype(
+				self.untitled_row,
+				istable=1,
+				permissions=[],
+				fields=[
+					{"fieldname": "target", "fieldtype": "Link", "label": "Target", "options": self.untitled}
+				],
+			),
+		)
+		insert_test_doctype(
+			self,
+			new_doctype(
+				self.parent,
+				fields=[
+					{"fieldname": "title", "fieldtype": "Data", "label": "Title"},
+					{
+						"fieldname": "targets",
+						"fieldtype": "Table MultiSelect",
+						"label": "Targets",
+						"options": self.row,
+					},
+					{
+						"fieldname": "numbers",
+						"fieldtype": "Table MultiSelect",
+						"label": "Numbers",
+						"options": self.numbered_row,
+					},
+					{
+						"fieldname": "untitled",
+						"fieldtype": "Table MultiSelect",
+						"label": "Untitled",
+						"options": self.untitled_row,
+					},
+				],
+			),
+		)
+
+		for title in ("Alpha", "Beta", "Gamma"):
+			frappe.get_doc(doctype=self.target, title=title).insert(ignore_if_duplicate=True)
+
+		self.numbered_names = [
+			str(frappe.get_doc(doctype=self.numbered, title=title).insert().name) for title in ("One", "Two")
+		]
+		self.untitled_names = [
+			str(frappe.get_doc(doctype=self.untitled, note=note).insert().name)
+			for note in ("First", "Second")
+		]
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
 		frappe.local.request = None
+		super().tearDown()
 
 	def test_form_data_ships_the_child_link_docfield(self):
 		"""The portal has no DocType meta, so the control needs the child's Link field as-is."""
 		web_form = self.make_web_form()
 		frappe.set_user("Guest")
 
-		out = get_form_data(doctype=PARENT, web_form_name=web_form.name)
+		out = get_form_data(doctype=self.parent, web_form_name=web_form.name)
 
 		field = next(f for f in out.web_form.web_form_fields if f.fieldname == "targets")
 		self.assertEqual(
 			[(df["fieldname"], df["fieldtype"], df["options"]) for df in field.fields],
-			[("target", "Link", TARGET)],
+			[("target", "Link", self.target)],
 		)
 		self.assertIn("Alpha", self.link_options(web_form))
 
@@ -134,7 +154,7 @@ class TestWebFormTableMultiSelect(IntegrationTestCase):
 	def test_has_link_option_descends_into_table_multiselect(self):
 		fields = self.make_web_form().web_form_fields
 
-		self.assertTrue(has_link_option(fields, TARGET))
+		self.assertTrue(has_link_option(fields, self.target))
 		self.assertFalse(has_link_option(fields, "User"))
 
 	def test_portal_page_ships_the_child_link_docfield(self):
@@ -161,16 +181,16 @@ class TestWebFormTableMultiSelect(IntegrationTestCase):
 			self.link_options(web_form, web_form_request_key=key)
 
 		frappe.set_user("Administrator")
-		self.allow_guest_read(TARGET)
+		self.allow_guest_read(self.target)
 		frappe.set_user("Guest")
 
 		self.assertIn("Alpha", self.link_options(web_form, web_form_request_key=key))
 
 	def test_login_required_options_show_own_rows_unless_the_field_opts_out(self):
 		user = self.make_website_user()
-		own = frappe.get_doc(doctype=TARGET, title="Owned By TMS Website User").insert()
-		self.addCleanup(frappe.delete_doc, TARGET, own.name, force=True)
-		frappe.db.set_value(TARGET, own.name, "owner", user, update_modified=False)
+		own = frappe.get_doc(doctype=self.target, title="Owned By TMS Website User").insert()
+		self.addCleanup(frappe.delete_doc, self.target, own.name, force=True)
+		frappe.db.set_value(self.target, own.name, "owner", user, update_modified=False)
 
 		scoped = self.make_web_form(login_required=1)
 		opted_out = self.make_web_form(login_required=1, field_settings={"allow_read_on_all_link_options": 1})
@@ -199,7 +219,7 @@ class TestWebFormTableMultiSelect(IntegrationTestCase):
 
 	def test_link_options_are_strings_for_an_autoincrement_doctype(self):
 		"""The control matches with value.toLowerCase(), so an integer name throws on a keystroke."""
-		web_form = self.make_web_form(link_field="numbers", options=NUMBERED_ROW)
+		web_form = self.make_web_form(link_field="numbers", options=self.numbered_row)
 		frappe.set_user("Guest")
 
 		options = self.link_options(web_form, fieldname="numbers", raw=True)
@@ -210,7 +230,7 @@ class TestWebFormTableMultiSelect(IntegrationTestCase):
 
 	def test_link_options_join_for_an_autoincrement_doctype_without_a_title_field(self):
 		"""Without a title field the options ship as one joined string, which integers break."""
-		web_form = self.make_web_form(link_field="untitled", options=UNTITLED_ROW)
+		web_form = self.make_web_form(link_field="untitled", options=self.untitled_row)
 		frappe.set_user("Guest")
 
 		options = self.link_options(web_form, fieldname="untitled", raw=True)
@@ -218,7 +238,7 @@ class TestWebFormTableMultiSelect(IntegrationTestCase):
 		# equality, not a subset: it pins the count, so an empty join cannot pass
 		self.assertEqual(sorted(options), sorted(self.untitled_names))
 
-	def make_web_form(self, field_settings=None, link_field="targets", options=ROW, **settings):
+	def make_web_form(self, field_settings=None, link_field="targets", options=None, **settings):
 		"""Unique names keep get_cached_doc from serving a stale form."""
 		suffix = frappe.generate_hash(length=8)
 		web_form = frappe.get_doc(
@@ -226,7 +246,7 @@ class TestWebFormTableMultiSelect(IntegrationTestCase):
 				"doctype": "Web Form",
 				"title": f"_Test TMS Web Form {suffix}",
 				"route": f"test-tms-web-form-{suffix}",
-				"doc_type": PARENT,
+				"doc_type": self.parent,
 				"module": "Website",
 				"published": 1,
 				"login_required": 0,
@@ -236,7 +256,7 @@ class TestWebFormTableMultiSelect(IntegrationTestCase):
 						"fieldname": link_field,
 						"fieldtype": "Table MultiSelect",
 						"label": link_field.title(),
-						"options": options,
+						"options": options or self.row,
 						**(field_settings or {}),
 					},
 				],
@@ -258,12 +278,17 @@ class TestWebFormTableMultiSelect(IntegrationTestCase):
 		).insert(ignore_permissions=True)
 
 	def make_website_user(self):
-		email = "tms-web-form-user@example.com"
-		if not frappe.db.exists("User", email):
+		return (
 			frappe.get_doc(
-				{"doctype": "User", "email": email, "first_name": "TMS", "user_type": "Website User"}
-			).insert(ignore_permissions=True)
-		return email
+				doctype="User",
+				email=f"tms-{frappe.generate_hash()}@example.com",
+				first_name="TMS",
+				user_type="Website User",
+				send_welcome_email=0,
+			)
+			.insert()
+			.name
+		)
 
 	def allow_guest_read(self, doctype):
 		add_permission(doctype, "Guest", ptype="read")
@@ -272,7 +297,7 @@ class TestWebFormTableMultiSelect(IntegrationTestCase):
 
 	def link_options(self, web_form, fieldname="targets", raw=False, **kwargs):
 		"""The options the portal control filters in the browser, as the page ships them."""
-		out = get_form_data(doctype=PARENT, web_form_name=web_form.name, **kwargs)
+		out = get_form_data(doctype=self.parent, web_form_name=web_form.name, **kwargs)
 		field = next(f for f in out.web_form.web_form_fields if f.fieldname == fieldname)
 		options = field.fields[0]["link_options"]
 		if isinstance(options, str):
@@ -284,5 +309,5 @@ class TestWebFormTableMultiSelect(IntegrationTestCase):
 	def submit(self, web_form, targets):
 		return accept(
 			web_form=web_form.name,
-			data=json.dumps({"doctype": PARENT, "title": "_Test TMS Submission", "targets": targets}),
+			data=json.dumps({"doctype": self.parent, "title": "_Test TMS Submission", "targets": targets}),
 		)

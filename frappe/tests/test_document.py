@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 
 import frappe
 from frappe.app import make_form_dict
-from frappe.core.doctype.doctype.test_doctype import new_doctype
+from frappe.core.doctype.doctype.test_doctype import insert_test_doctype, new_doctype
 from frappe.core.doctype.rq_job.test_rq_job import wait_for_completion
 from frappe.core.doctype.user.user import User
 from frappe.core.doctype.user_permission.test_user_permission import create_user
@@ -531,13 +531,13 @@ class TestDocument(IntegrationTestCase):
 				}
 			)
 
+			with patch.object(frappe.db, "updatedb"):
+				custom_field.insert(ignore_if_duplicate=True)
 			try:
-				yield custom_field.insert(ignore_if_duplicate=True)
+				yield
 			finally:
 				custom_field.delete()
-				# to truly delete the field
-				# creation is commited due to DDL
-				frappe.db.commit()
+				self.addCleanup(frappe.db.after_rollback.add, lambda: frappe.clear_cache(doctype="Note"))
 
 		with patch_note():
 			doc = frappe.get_last_doc("Note")
@@ -780,7 +780,7 @@ class TestDocument(IntegrationTestCase):
 		"""JSON-fieldtype values must survive _sanitize_content untouched, even when
 		they contain HTML-like substrings, while ordinary text fields on the same
 		doctype are still sanitized."""
-		from frappe.core.doctype.doctype.test_doctype import new_doctype
+		from frappe.core.doctype.doctype.test_doctype import insert_test_doctype, new_doctype
 
 		if not frappe.db.exists("DocType", "Test JSON Sanitize"):
 			new_doctype(
@@ -1306,32 +1306,27 @@ class TestLazyDocument(IntegrationTestCase):
 
 
 class TestGetDocs(IntegrationTestCase):
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		cls.child_dt = "Test Get Docs Child"
-		cls.parent_dt = "Test Get Docs Parent"
-
-		cls.child_dt = new_doctype(istable=1).insert().name
-		cls.parent_dt = (
+	def setUp(self):
+		super().setUp()
+		self.child_dt = insert_test_doctype(self, new_doctype(istable=1)).name
+		self.parent_dt = insert_test_doctype(
+			self,
 			new_doctype(
 				fields=[
 					{"fieldtype": "Data", "fieldname": "title", "label": "Title"},
 					{
 						"fieldtype": "Table",
 						"fieldname": "child_table",
-						"options": cls.child_dt,
+						"options": self.child_dt,
 						"label": "Child Table",
 					},
 				],
-			)
-			.insert()
-			.name
-		)
+			),
+		).name
 		for i in range(5):
 			frappe.get_doc(
 				{
-					"doctype": cls.parent_dt,
+					"doctype": self.parent_dt,
 					"title": f"Record {i}",
 					"child_table": [
 						{"some_fieldname": f"child_{i}_0"},
@@ -1339,14 +1334,6 @@ class TestGetDocs(IntegrationTestCase):
 					],
 				}
 			).insert()
-
-	@classmethod
-	def tearDownClass(cls):
-		frappe.db.delete(cls.child_dt)
-		frappe.db.delete(cls.parent_dt)
-		frappe.delete_doc("DocType", cls.parent_dt, force=True)
-		frappe.delete_doc("DocType", cls.child_dt, force=True)
-		super().tearDownClass()
 
 	def test_returns_document_instances(self):
 		docs = frappe.get_docs(self.parent_dt)
@@ -1408,10 +1395,6 @@ class TestDocsCollection(IntegrationTestCase):
 	`.docs.last`, `.docs.filter`, `.docs.new`, `.docs.delete`) on any
 	controller class that declares `_DOCTYPE_NAME`.
 	"""
-
-	def tearDown(self):
-		frappe.db.rollback()
-		return super().tearDown()
 
 	def test_doctype_resolved_from_controller(self):
 		self.assertEqual(ToDo.docs._doctype, "ToDo")

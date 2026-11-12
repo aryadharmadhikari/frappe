@@ -120,64 +120,15 @@ def get_test_webhook(config):
 
 
 class TestWebhook(IntegrationTestCase):
-	@classmethod
-	def setUpClass(cls):
-		# delete any existing webhooks
-		frappe.db.delete("Webhook")
-		# Delete existing logs if any
-		frappe.db.delete("Webhook Request Log")
-		super().setUpClass()
-		# create test webhooks
-		cls.create_sample_webhooks()
-
-	@classmethod
-	def create_sample_webhooks(cls):
-		samples_webhooks_data = [
-			{
-				"name": frappe.generate_hash(),
-				"webhook_doctype": "User",
-				"webhook_docevent": "after_insert",
-				"request_url": "https://httpbin.org/post",
-				"condition": "doc.email",
-				"enabled": True,
-			},
-			{
-				"name": frappe.generate_hash(),
-				"webhook_doctype": "User",
-				"webhook_docevent": "after_insert",
-				"request_url": "https://httpbin.org/post",
-				"condition": "doc.first_name",
-				"enabled": False,
-			},
-		]
-
-		cls.sample_webhooks = []
-		for wh_fields in samples_webhooks_data:
-			wh = frappe.new_doc("Webhook")
-			wh.update(wh_fields)
-			wh.insert()
-			cls.sample_webhooks.append(wh)
-
-	@classmethod
-	def tearDownClass(cls):
-		# delete any existing webhooks
-		frappe.db.rollback()
-		frappe.db.delete("Webhook")
-		frappe.db.commit()
-		frappe.client_cache.delete_value("webhooks")
-
 	@timeout(5, "Test webhooks should never wait, check mocked responses.")
 	def setUp(self):
-		# retrieve or create a User webhook for `after_insert`
-		self.responses = responses.RequestsMock()
-		self.responses.start()
-
-		self.responses.add(
-			responses.POST,
-			"https://httpbin.org/post",
-			status=200,
-			json={},
-		)
+		super().setUp()
+		frappe.db.delete("Webhook")
+		frappe.client_cache.delete_value("webhooks")
+		frappe.db.after_rollback.add(lambda: frappe.client_cache.delete_value("webhooks"))
+		self.responses = self.enterContext(responses.RequestsMock())
+		frappe.local._webhook_queue = None
+		self.addCleanup(setattr, frappe.local, "_webhook_queue", None)
 
 		webhook_fields = {
 			"webhook_doctype": "User",
@@ -185,51 +136,46 @@ class TestWebhook(IntegrationTestCase):
 			"request_url": "https://httpbin.org/post",
 		}
 
-		if frappe.db.exists("Webhook", webhook_fields):
-			self.webhook = frappe.get_doc("Webhook", webhook_fields)
-		else:
-			self.webhook = frappe.new_doc("Webhook")
-			self.webhook.update(webhook_fields)
-
-		# create a User document
-		self.user = frappe.new_doc("User")
-		self.user.first_name = frappe.mock("name")
-		self.user.email = frappe.mock("email")
-		self.user.save()
-
-		# Create another test user specific to this test
-		self.test_user = frappe.new_doc("User")
-		self.test_user.email = "user1@integration.webhooks.test.com"
-		self.test_user.first_name = "user1"
-		self.test_user.send_welcome_email = False
-		frappe.db.commit()
-
-	def tearDown(self) -> None:
-		self.user.delete()
-		self.test_user.delete()
-
-		self.responses.stop()
-		self.responses.reset()
-		super().tearDown()
+		self.webhook = frappe.new_doc("Webhook", name=frappe.generate_hash(), **webhook_fields)
+		self.user = frappe.get_doc(
+			doctype="User",
+			first_name=frappe.mock("name"),
+			email=f"{frappe.generate_hash()}@example.com",
+			send_welcome_email=0,
+		).insert()
 
 	@timeout(5, "Test webhooks should never wait, check mocked responses.")
 	def test_webhook_trigger_with_enabled_webhooks(self):
 		"""Test webhook trigger for enabled webhooks"""
 
-		frappe.client_cache.delete_value("webhooks")
-
-		# Insert the user to db
-		self.test_user.insert()
+		self.responses.add(responses.POST, self.webhook.request_url, status=200, json={})
+		self.webhook.condition = "doc.email"
+		self.webhook.insert()
+		frappe.get_doc(
+			doctype="Webhook",
+			name=frappe.generate_hash(),
+			webhook_doctype="User",
+			webhook_docevent="after_insert",
+			request_url=self.webhook.request_url,
+			condition="doc.first_name",
+			enabled=0,
+		).insert()
+		user = frappe.get_doc(
+			doctype="User",
+			email=f"{frappe.generate_hash()}@example.com",
+			first_name="Test Webhook",
+			send_welcome_email=0,
+		).insert()
 
 		webhooks = frappe.client_cache.get_value("webhooks")
 		self.assertTrue("User" in webhooks)
 		self.assertEqual(len(webhooks.get("User")), 1)
 
-		# only 1 hook (enabled) must be queued
 		self.assertEqual(len(frappe.local._webhook_queue), 1)
 		execution = frappe.local._webhook_queue[0]
-		self.assertEqual(execution.webhook.name, self.sample_webhooks[0].name)
-		self.assertEqual(execution.doc.name, self.test_user.name)
+		self.assertEqual(execution.webhook.name, self.webhook.name)
+		self.assertEqual(execution.doc.name, user.name)
+		flush_webhook_execution_queue()
 
 	@timeout(5, "Test webhooks should never wait, check mocked responses.")
 	def test_validate_doc_events(self):
@@ -300,17 +246,10 @@ class TestWebhook(IntegrationTestCase):
 			json={},
 		)
 
-		if not frappe.db.get_value("User", "user2@integration.webhooks.test.com"):
-			user = frappe.get_doc(
-				{"doctype": "User", "email": "user2@integration.webhooks.test.com", "first_name": "user2"}
-			).insert()
-		else:
-			user = frappe.get_doc("User", "user2@integration.webhooks.test.com")
+		self.webhook.insert()
+		enqueue_webhook(self.user, self.webhook)
 
-		webhook = frappe.get_doc("Webhook", {"webhook_doctype": "User"})
-		enqueue_webhook(user, webhook)
-
-		self.assertTrue(frappe.get_all("Webhook Request Log", pluck="name"))
+		self.assertTrue(frappe.db.exists("Webhook Request Log", {"webhook": self.webhook.name}))
 
 	@timeout(5, "Test webhooks should never wait, check mocked responses.")
 	def test_webhook_with_array_body(self):

@@ -18,6 +18,7 @@ from frappe.query_builder import Field
 from frappe.query_builder.functions import Concat_ws
 from frappe.tests import IntegrationTestCase, UnitTestCase, timeout
 from frappe.tests.test_query_builder import db_type_is, run_only_if, unimplemented_for
+from frappe.tests.utils import cleanup_committed_test_data
 from frappe.utils import add_days, now, random_string, set_request
 from frappe.utils.data import now_datetime
 from frappe.utils.testutils import clear_custom_fields
@@ -255,8 +256,8 @@ class TestDB(IntegrationTestCase):
 		self.assertEqual(results, {"enable_telemetry": doc.enable_telemetry})
 
 	def test_log_touched_tables(self):
-		if frappe.db.has_column("ToDo", "todo_custom_field"):
-			frappe.db.sql_ddl("ALTER TABLE `tabToDo` DROP COLUMN `todo_custom_field`")
+		from frappe.core.doctype.doctype.test_doctype import _transactional_postgres_schema
+
 		frappe.flags.in_migrate = True
 		frappe.flags.touched_tables = set()
 		frappe.db.set_single_value("System Settings", "backup_limit", 5)
@@ -282,17 +283,17 @@ class TestDB(IntegrationTestCase):
 		todo.delete()
 		self.assertIn("tabToDo", frappe.flags.touched_tables)
 
+		frappe.db.rollback()
 		frappe.flags.touched_tables = set()
-		cf = create_custom_field("ToDo", {"label": "ToDo Custom Field"})
-		# deleting the Custom Field leaves its column on the table, so without dropping it the next
-		# run adds no column, logs no ALTER TABLE, and never sees tabToDo as touched
-		self.addCleanup(frappe.db.commit)
-		self.addCleanup(frappe.db.sql_ddl, "ALTER TABLE `tabToDo` DROP COLUMN `todo_custom_field`")
-		if cf:
+		fieldname = f"todo_custom_field_{frappe.generate_hash(length=8)}"
+		with _transactional_postgres_schema():
+			cf = create_custom_field("ToDo", {"label": "ToDo Custom Field", "fieldname": fieldname})
+		if frappe.db.db_type == "mariadb":
+			self.addCleanup(frappe.db.sql_ddl, f"ALTER TABLE `tabToDo` DROP COLUMN `{cf.fieldname}`")
 			self.addCleanup(cf.delete)
+			self.addCleanup(frappe.db.rollback)
 		self.assertIn("tabToDo", frappe.flags.touched_tables)
 		self.assertIn("tabCustom Field", frappe.flags.touched_tables)
-		frappe.db.commit()
 		frappe.flags.in_migrate = False
 		frappe.flags.touched_tables.clear()
 
@@ -541,7 +542,6 @@ class TestDB(IntegrationTestCase):
 			frappe.db.rollback(save_point=save_point)
 			doc_kept = frappe.get_doc(doctype="ToDo", description="nope").save()
 			created_docs.append(doc_kept.name)
-		frappe.db.commit()
 
 		for d in failed_docs:
 			self.assertFalse(frappe.db.exists("ToDo", d))
@@ -566,8 +566,6 @@ class TestDB(IntegrationTestCase):
 				doc_gone = frappe.get_doc(doctype="ToDo", description="nope").save()
 				failed_docs.append(doc_gone.name)
 				raise SpecificExc
-
-		frappe.db.commit()
 
 		for d in failed_docs:
 			self.assertFalse(frappe.db.exists("ToDo", d))
@@ -1265,18 +1263,6 @@ class TestDB(IntegrationTestCase):
 		self.assertEqual(statuses, [TransactionStatus.IDLE])
 
 	@run_only_if(db_type_is.POSTGRES)
-	def test_transactions_after_commit_use_the_session_isolation(self):
-		from frappe.automation_engine.tests.test_drainer import connect_again
-
-		other = connect_again()
-		self.addCleanup(other.close)
-		other.commit()
-		self.assertEqual(other.sql("show transaction_isolation")[0][0], "repeatable read")
-		other.sql("SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL READ COMMITTED")
-		other.commit()
-		self.assertEqual(other.sql("show transaction_isolation")[0][0], "read committed")
-
-	@run_only_if(db_type_is.POSTGRES)
 	def test_server_bound_parameters_postgres_cannot_type(self):
 		from frappe.query_builder.functions import Concat
 
@@ -1321,53 +1307,6 @@ class TestDB(IntegrationTestCase):
 		self.assertFalse(frappe.db.sql("select name from tabDocType where name in %s", ((),)))
 		frappe.db.sql("set local statement_timeout = %s", 1234)
 		self.assertEqual(frappe.db.sql("show statement_timeout")[0][0], "1234ms")
-
-	def test_callbacks(self):
-		order_of_execution = []
-
-		def f(val):
-			nonlocal order_of_execution
-			order_of_execution.append(val)
-
-		frappe.db.before_commit.add(lambda: f(0))
-		frappe.db.before_commit.add(lambda: f(1))
-
-		frappe.db.after_commit.add(lambda: f(2))
-		frappe.db.after_commit.add(lambda: f(3))
-
-		frappe.db.before_rollback.add(lambda: f("IGNORED"))
-		frappe.db.before_rollback.add(lambda: f("IGNORED"))
-
-		frappe.db.commit()
-
-		frappe.db.after_commit.add(lambda: f("IGNORED"))
-		frappe.db.after_commit.add(lambda: f("IGNORED"))
-
-		frappe.db.before_rollback.add(lambda: f(4))
-		frappe.db.before_rollback.add(lambda: f(5))
-		frappe.db.after_rollback.add(lambda: f(6))
-		frappe.db.after_rollback.add(lambda: f(7))
-		frappe.db.after_rollback(lambda: f(8))
-
-		frappe.db.rollback()
-
-		self.assertEqual(order_of_execution, list(range(0, 9)))
-
-	def test_failing_after_commit_callback(self):
-		executed = []
-
-		def fail():
-			raise ValueError("Outgoing mail server is unreachable")
-
-		frappe.db.after_commit.add(fail)
-		frappe.db.after_commit.add(lambda: executed.append("cache cleared"))
-
-		with patch("frappe.log_error") as log_error:
-			frappe.db.commit()
-
-		self.assertEqual(executed, ["cache cleared"])
-		log_error.assert_called_once()
-		self.assertEqual(len(frappe.db.after_commit), 0)
 
 	def test_failing_after_rollback_callback(self):
 		executed = []
@@ -1437,6 +1376,55 @@ class TestDB(IntegrationTestCase):
 				db.close()
 
 
+class TestCommitCallbacks(IntegrationTestCase):
+	def test_callbacks(self):
+		order_of_execution = []
+
+		def f(val):
+			nonlocal order_of_execution
+			order_of_execution.append(val)
+
+		frappe.db.before_commit.add(lambda: f(0))
+		frappe.db.before_commit.add(lambda: f(1))
+
+		frappe.db.after_commit.add(lambda: f(2))
+		frappe.db.after_commit.add(lambda: f(3))
+
+		frappe.db.before_rollback.add(lambda: f("IGNORED"))
+		frappe.db.before_rollback.add(lambda: f("IGNORED"))
+
+		frappe.db.commit()
+
+		frappe.db.after_commit.add(lambda: f("IGNORED"))
+		frappe.db.after_commit.add(lambda: f("IGNORED"))
+
+		frappe.db.before_rollback.add(lambda: f(4))
+		frappe.db.before_rollback.add(lambda: f(5))
+		frappe.db.after_rollback.add(lambda: f(6))
+		frappe.db.after_rollback.add(lambda: f(7))
+		frappe.db.after_rollback(lambda: f(8))
+
+		frappe.db.rollback()
+
+		self.assertEqual(order_of_execution, list(range(0, 9)))
+
+	def test_failing_after_commit_callback(self):
+		executed = []
+
+		def fail():
+			raise ValueError("Outgoing mail server is unreachable")
+
+		frappe.db.after_commit.add(fail)
+		frappe.db.after_commit.add(lambda: executed.append("cache cleared"))
+
+		with patch("frappe.log_error") as log_error:
+			frappe.db.commit()
+
+		self.assertEqual(executed, ["cache cleared"])
+		log_error.assert_called_once()
+		self.assertEqual(len(frappe.db.after_commit), 0)
+
+
 @run_only_if(db_type_is.MARIADB)
 class TestDDLCommandsMaria(IntegrationTestCase):
 	test_table_name = "TestNotes"
@@ -1451,6 +1439,7 @@ class TestDDLCommandsMaria(IntegrationTestCase):
 	def tearDown(self) -> None:
 		frappe.db.sql(f"DROP TABLE tab{self.test_table_name};")
 		self.test_table_name = "TestNotes"
+		super().tearDown()
 
 	def test_rename(self) -> None:
 		new_table_name = f"{self.test_table_name}_new"
@@ -1522,6 +1511,7 @@ class TestDDLCommandsSQLite(IntegrationTestCase):
 	def tearDown(self) -> None:
 		for table_name in [self.table_name, self.audit_table, *self.other_tables]:
 			frappe.db.sql_ddl(f"DROP TABLE IF EXISTS `{table_name}`")
+		super().tearDown()
 
 	def create_doctype_table(self, field_definition: str) -> None:
 		frappe.db.sql_ddl(
@@ -1996,11 +1986,10 @@ class TestDDLCommandsSQLite(IntegrationTestCase):
 
 
 class TestDBSetValue(IntegrationTestCase):
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		cls.todo1 = frappe.get_doc(doctype="ToDo", description="test_set_value 1").insert()
-		cls.todo2 = frappe.get_doc(doctype="ToDo", description="test_set_value 2").insert()
+	def setUp(self):
+		super().setUp()
+		self.todo1 = frappe.get_doc(doctype="ToDo", description="test_set_value 1").insert()
+		self.todo2 = frappe.get_doc(doctype="ToDo", description="test_set_value 2").insert()
 
 	def test_update_single_doctype_field(self):
 		value = frappe.db.get_single_value("System Settings", "deny_multiple_sessions")
@@ -2166,6 +2155,7 @@ class TestDDLCommandsPost(IntegrationTestCase):
 	def tearDown(self) -> None:
 		self.test_table_name = "TestNotes"
 		self._drop_test_tables()
+		super().tearDown()
 
 	def _drop_test_tables(self) -> None:
 		for table in ("tabTestNotes", "tabTestNotes_new"):
@@ -2545,6 +2535,17 @@ class TestTransactionManagement(IntegrationTestCase):
 		frappe.db.rollback()
 		self.assertEqual(advisory_count(), before)
 
+	def test_transactions_after_commit_use_the_session_isolation(self):
+		from frappe.automation_engine.tests.test_drainer import connect_again
+
+		other = connect_again()
+		self.addCleanup(other.close)
+		other.commit()
+		self.assertEqual(other.sql("show transaction_isolation")[0][0], "repeatable read")
+		other.sql("SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL READ COMMITTED")
+		other.commit()
+		self.assertEqual(other.sql("show transaction_isolation")[0][0], "read committed")
+
 
 class TestReadOnlyTransaction(IntegrationTestCase):
 	def setUp(self):
@@ -2655,7 +2656,8 @@ class TestConcurrency(IntegrationTestCase):
 		note = frappe.new_doc("Note")
 		note.title = note.content = frappe.generate_hash()
 		note.insert()
-		frappe.db.commit()  # ensure that second connection can see the document
+		self.addCleanup(cleanup_committed_test_data, frappe.delete_doc_if_exists, note.doctype, note.name)
+		frappe.db.commit()  # nosemgrep
 
 		with self.primary_connection():
 			n1 = frappe.get_doc(note.doctype, note.name)
@@ -2667,7 +2669,8 @@ class TestConcurrency(IntegrationTestCase):
 	@run_only_if(db_type_is.SQLITE)
 	def test_stale_sqlite_snapshot_cannot_overwrite_a_newer_value(self):
 		note = frappe.get_doc(doctype="Note", title=frappe.generate_hash(), content="original").insert()
-		frappe.db.commit()
+		self.addCleanup(cleanup_committed_test_data, frappe.delete_doc_if_exists, note.doctype, note.name)
+		frappe.db.commit()  # nosemgrep
 
 		with self.primary_connection():
 			stale_note = frappe.get_doc(note.doctype, note.name)
@@ -2691,7 +2694,8 @@ class TestConcurrency(IntegrationTestCase):
 		note = frappe.new_doc("Note")
 		note.title = note.content = frappe.generate_hash()
 		note.insert()
-		frappe.db.commit()  # ensure that second connection can see the document
+		self.addCleanup(cleanup_committed_test_data, frappe.delete_doc_if_exists, note.doctype, note.name)
+		frappe.db.commit()  # nosemgrep
 		original_title = note.title
 		new_title = frappe.generate_hash()
 
@@ -2841,6 +2845,7 @@ class TestPostgresSchemaQueryIndependence(ExtIntegrationTestCase):
 
 	def tearDown(self) -> None:
 		self.cleanup()
+		super().tearDown()
 
 	def cleanup(self) -> None:
 		for query in (
@@ -2990,6 +2995,7 @@ class TestDbConnectWithEnvCredentials(IntegrationTestCase):
 	def tearDown(self):
 		frappe.init(self.current_site, force=True)
 		frappe.connect()
+		super().tearDown()
 
 	@unimplemented_for(db_type_is.SQLITE)
 	def test_connect_fails_with_wrong_credentials_by_env(self) -> None:
@@ -3215,10 +3221,10 @@ class TestBulkInsertCopy(IntegrationTestCase):
 		frappe.db.sql_ddl("DROP TABLE IF EXISTS `tabBulkLoadTest`")
 		frappe.db.sql("CREATE TABLE `tabBulkLoadTest` (`name` varchar(140), `qty` int, `note` text)")
 		self.addCleanup(frappe.db.sql_ddl, "DROP TABLE IF EXISTS `tabBulkLoadTest`")
+		self.addCleanup(frappe.db.rollback)
 
 		rows = [("a", 1, "x"), ("b", 2, None), ("c\twith\ttabs", 3, "line\nbreak")]
 		frappe.db.bulk_insert("BulkLoadTest", ["name", "qty", "note"], rows)
-		frappe.db.commit()  # nosemgrep
 
 		got = frappe.db.sql("SELECT `name`, `qty`, `note` FROM `tabBulkLoadTest` ORDER BY `qty`")
 		self.assertEqual(len(got), 3)
@@ -3233,10 +3239,10 @@ class TestBulkInsertCopy(IntegrationTestCase):
 		frappe.db.sql_ddl("DROP TABLE IF EXISTS `tabBulkTimeTest`")
 		frappe.db.sql('CREATE TABLE "tabBulkTimeTest" ("name" varchar(140), "at" time)')
 		self.addCleanup(frappe.db.sql_ddl, "DROP TABLE IF EXISTS `tabBulkTimeTest`")
+		self.addCleanup(frappe.db.rollback)
 
 		value = datetime.timedelta(hours=2, minutes=30, seconds=15)
 		frappe.db.bulk_insert("BulkTimeTest", ["name", "at"], [("a", value)])
-		frappe.db.commit()  # nosemgrep
 
 		self.assertEqual(frappe.db.sql('SELECT "at" FROM "tabBulkTimeTest"')[0][0], value)
 
@@ -3247,9 +3253,9 @@ class TestBulkInsertCopy(IntegrationTestCase):
 		frappe.db.sql_ddl("DROP TABLE IF EXISTS `tabBulkFlagTest`")
 		frappe.db.sql('CREATE TABLE "tabBulkFlagTest" ("name" varchar(140), "flag" smallint)')
 		self.addCleanup(frappe.db.sql_ddl, "DROP TABLE IF EXISTS `tabBulkFlagTest`")
+		self.addCleanup(frappe.db.rollback)
 
 		frappe.db.bulk_insert("BulkFlagTest", ["name", "flag"], [("a", True), ("b", False)])
-		frappe.db.commit()  # nosemgrep
 
 		got = dict(frappe.db.sql('SELECT "name", "flag" FROM "tabBulkFlagTest"'))
 		self.assertEqual(got["a"], 1)

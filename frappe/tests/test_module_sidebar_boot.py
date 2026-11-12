@@ -23,6 +23,7 @@ from frappe.desk.doctype.sidebar.test_sidebar import (
 	system_write,
 )
 from frappe.tests import IntegrationTestCase
+from frappe.tests.baseline import DESK_USER, SYSTEM_MANAGER
 from frappe.utils.modules import get_visible_modules
 
 
@@ -546,7 +547,6 @@ class TestSidebarBoot(IntegrationTestCase):
 		permissions, so the `user` argument alone would still be answered as whoever is logged in,
 		and every item would pass for an Administrator running the test.
 		"""
-		user = make_user("test-shell-nothing-open@example.com", ["Desk User"])
 		with sidebarless_module("Test Shell Nothing Open Module") as module:
 			with system_write():
 				doc = frappe.get_doc({"doctype": "Sidebar", "module": module})
@@ -557,9 +557,9 @@ class TestSidebarBoot(IntegrationTestCase):
 				resolve_sidebar(module, "Administrator"),
 				"the shell exists for someone who can open its item",
 			)
-			with self.set_user(user.name):
+			with self.set_user(DESK_USER):
 				self.assertIsNone(
-					resolve_sidebar(module, user.name),
+					resolve_sidebar(module, DESK_USER),
 					"and is dropped for someone who cannot, rather than rendering blank",
 				)
 
@@ -899,7 +899,6 @@ class TestAClaimOnAnAbsentEntityIsInert(IntegrationTestCase):
 
 	MISSING = "Test Entity From An Absent App"
 	MODULE = "Test Absent Claim Module"
-	USER = "absent-app-claim@example.com"
 
 	def setUp(self):
 		frappe.set_user("Administrator")
@@ -907,6 +906,7 @@ class TestAClaimOnAnAbsentEntityIsInert(IntegrationTestCase):
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
+		super().tearDown()
 
 	def claim_row(self):
 		"""The row an app ships: a link to an entity it does not define, flagged as owned."""
@@ -946,8 +946,7 @@ class TestAClaimOnAnAbsentEntityIsInert(IntegrationTestCase):
 		Administrator is the one session that cannot observe this.
 
 		"""
-		make_user(self.USER, ["System Manager"])
-		frappe.set_user(self.USER)
+		frappe.set_user(SYSTEM_MANAGER)
 
 		# a readable row alongside it, so an empty result is attributable to the absent entity
 		# rather than to a user who can see nothing at all

@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import frappe
 import frappe.automation_engine.drainer as drainer
-from frappe.automation_engine import settings
+from frappe.automation_engine import dispatch, settings
 from frappe.automation_engine.drainer import (
 	claim_batch,
 	drain,
@@ -45,17 +45,19 @@ class TestDrainer(IntegrationTestCase):
 	# instead of relying on the harness transaction rollback.
 
 	def setUp(self):
-		frappe.db.delete(QUEUE)
-		frappe.db.delete("Automation Flow")
+		super().setUp()
+		self.enterContext(patch.object(dispatch, "kick_drainer"))
+		self.enterContext(patch.object(drainer, "kick_drainer"))
 		self.automation = make_automation()
-		# claim_batch commits, so these tests cannot rely on the harness rollback.
-		frappe.db.commit()  # nosemgrep
+		self.addCleanup(self.delete_flow_and_queue)
 
-	def tearDown(self):
-		for name in frappe.get_all(QUEUE, pluck="name"):
+	def delete_flow_and_queue(self):
+		frappe.db.rollback()
+		filters = {"automation": self.automation}
+		for name in frappe.get_all(QUEUE, filters=filters, pluck="name"):
 			clear_effects(name)
-		frappe.db.delete(QUEUE)
-		frappe.db.delete("Automation Flow")
+		frappe.db.delete(QUEUE, filters)
+		frappe.delete_doc_if_exists("Automation Flow", self.automation, force=True)
 		frappe.db.commit()  # nosemgrep
 
 	def add_row(self, ref_name, run_after=None, status=None):
@@ -369,12 +371,11 @@ class TestDrainer(IntegrationTestCase):
 			commits.append(1)
 			return original_commit(*args, **kwargs)
 
-		frappe.db.commit = counting_commit
-		try:
-			with self.change_settings("Automation Settings", commit_every=2):
-				drainer.execute_batch(lambda name: None, claimed)
-		finally:
-			frappe.db.commit = original_commit
+		with (
+			self.change_settings("Automation Settings", commit=True, commit_every=2),
+			patch.object(frappe.db, "commit", counting_commit),
+		):
+			drainer.execute_batch(lambda name: None, claimed)
 
 		# Four rows at two per group is two commits, not four.
 		self.assertEqual(len(commits), 2)
@@ -387,7 +388,7 @@ class TestDrainer(IntegrationTestCase):
 		# A budget this small expires during the first batch, so the second is never claimed.
 		with (
 			patch.object(drainer, "kick_drainer") as kick,
-			self.change_settings("Automation Settings", drain_seconds=0.001),
+			self.change_settings("Automation Settings", commit=True, drain_seconds=0.001),
 		):
 			with patch.object(drainer, "time", wraps=drainer.time) as clock:
 				clock.monotonic.side_effect = [100.0, 101.0]
@@ -505,8 +506,8 @@ class TestDrainer(IntegrationTestCase):
 			doc = frappe.get_doc(values).insert(ignore_permissions=True)
 		finally:
 			frappe.flags.skip_automations = previous
-		frappe.db.commit()  # nosemgrep
 		self.addCleanup(delete_committed, doc.doctype, doc.name)
+		frappe.db.commit()  # nosemgrep
 		return doc
 
 	def target_related_note(self):
@@ -525,7 +526,8 @@ def delete_runs(automation):
 
 
 def delete_committed(doctype, name):
-	frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
+	frappe.db.rollback()
+	frappe.delete_doc_if_exists(doctype, name, force=True, ignore_permissions=True)
 	frappe.db.commit()  # nosemgrep
 
 

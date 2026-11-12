@@ -29,8 +29,8 @@ class TestAutomationEvents(IntegrationTestCase):
 
 	def tearDown(self):
 		self.hooks.__exit__(None, None, None)
-		frappe.db.rollback()
 		clear_automation_cache()
+		super().tearDown()
 
 	def test_unregistered_event_is_rejected(self):
 		self.assertRaisesRegex(frappe.ValidationError, "Unregistered", emit, "tests.not_registered")
@@ -165,6 +165,7 @@ class TestRegisteredEvents(IntegrationTestCase):
 
 	def tearDown(self):
 		clear_automation_cache()
+		super().tearDown()
 
 	def _events(self, hooks) -> dict:
 		with self.patch_hooks({"automation_events": hooks}):
@@ -224,8 +225,8 @@ class TestAutomationEventSubjects(IntegrationTestCase):
 
 	def tearDown(self):
 		self.hooks.__exit__(None, None, None)
-		frappe.db.rollback()
 		clear_automation_cache()
+		super().tearDown()
 
 	def test_dynamic_subject_resolves_from_payload_keys(self):
 		subject = event_subject(SUBJECT_EVENT, {"ref_doctype": "ToDo", "ref_name": "TD-1"})

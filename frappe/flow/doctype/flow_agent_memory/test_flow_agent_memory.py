@@ -68,9 +68,9 @@ class MemoryCase(IntegrationTestCase):
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
-		frappe.db.rollback()
 		frappe.clear_document_cache("Flow Knowledge Settings", "Flow Knowledge Settings")
 		store.drop_table()
+		super().tearDown()
 
 	def insert_agent(self, title: str, tools: list[dict] | None = None):
 		return frappe.get_doc(

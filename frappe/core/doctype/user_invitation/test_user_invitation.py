@@ -2,6 +2,7 @@
 # See license.txt
 
 import re
+from unittest.mock import patch
 
 import frappe
 import frappe.utils
@@ -30,30 +31,6 @@ class IntegrationTestUserInvitation(IntegrationTestCase):
 	"""
 
 	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		user = frappe.new_doc("User")
-		user.first_name = "Test"
-		user.last_name = "123"
-		user.email = emails[0]
-		user.append_roles("System Manager")
-		user.insert()
-		frappe.set_user(emails[0])
-
-	@classmethod
-	def tearDownClass(cls):
-		super().tearDownClass()
-		IntegrationTestUserInvitation.delete_all_invitations()
-		IntegrationTestUserInvitation.delete_all_user_roles()
-		frappe.db.delete("Email Queue")
-		for user_email in emails:
-			if frappe.db.exists("User", user_email):
-				frappe.delete_doc("User", user_email)
-		frappe.set_user("Administrator")
-		# some of the code under test commit internally
-		frappe.db.commit()  # nosemgrep
-
-	@classmethod
 	def delete_all_user_roles(cls):
 		query = "DELETE FROM `tabUser Role`"
 		frappe.db.sql(cls.normalize_sql(query))
@@ -70,6 +47,17 @@ class IntegrationTestUserInvitation(IntegrationTestCase):
 
 	def setUp(self):
 		super().setUp()
+		self.enterContext(patch.object(frappe.db, "commit"))
+		frappe.set_user("Administrator")
+		if not frappe.db.exists("User", emails[0]):
+			user = frappe.new_doc("User")
+			user.first_name = "Test"
+			user.last_name = "123"
+			user.email = emails[0]
+			user.send_welcome_email = 0
+			user.append_roles("System Manager")
+			user.insert()
+		self.enterContext(self.set_user(emails[0]))
 		IntegrationTestUserInvitation.delete_all_invitations()
 		IntegrationTestUserInvitation.delete_all_user_roles()
 		frappe.db.delete("Email Queue")
@@ -78,7 +66,7 @@ class IntegrationTestUserInvitation(IntegrationTestCase):
 		invitation = self.get_dummy_invitation()
 		self.assertEqual(len(self.get_email_names()), 0)
 		invitation.insert()
-		frappe.db.commit()
+		frappe.db.after_commit.run()
 		self.assertEqual(invitation.invited_by, frappe.session.user)
 		self.assertEqual(invitation.status, "Pending")
 		self.assertIsInstance(invitation.email_sent_at, str)
@@ -91,10 +79,9 @@ class IntegrationTestUserInvitation(IntegrationTestCase):
 	def test_update_invitation_status_to_expired(self):
 		invitation = self.get_dummy_invitation()
 		invitation.insert()
-		frappe.db.commit()
+		frappe.db.after_commit.run()
 		self.assertEqual(len(self.get_email_names()), 1)
 		invitation.expire()
-		frappe.db.commit()
 		emails = self.get_email_messages(False)
 		self.assertEqual(len(emails), 2)
 		self.assertIn("expired", emails[0].message.lower())
@@ -255,20 +242,19 @@ class IntegrationTestUserInvitation(IntegrationTestCase):
 	def test_cancel_invitation_api(self):
 		invitation = self.get_dummy_invitation()
 		invitation.insert()
-		frappe.db.commit()
+		frappe.db.after_commit.run()
 
 		invitation.reload()
 		self.assertEqual(invitation.status, "Pending")
 		self.assertEqual(len(self.get_email_names()), 1)
 		res = cancel_invitation(invitation.name, "frappe")
-		frappe.db.commit()
+		frappe.db.after_commit.run()
 
 		self.assertTrue(res["cancelled_now"])
 		invitation.reload()
 		self.assertEqual(invitation.status, "Cancelled")
 		self.assertEqual(len(self.get_email_names()), 2)
 		res = cancel_invitation(invitation.name, "frappe")
-		frappe.db.commit()
 
 		self.assertFalse(res["cancelled_now"])
 		self.assertEqual(len(self.get_email_names()), 2)

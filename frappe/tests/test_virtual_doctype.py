@@ -1,10 +1,11 @@
 import json
 import os
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 import frappe
 import frappe.modules.utils
-from frappe.core.doctype.doctype.test_doctype import new_doctype
+from frappe.core.doctype.doctype.test_doctype import insert_test_doctype, new_doctype
 from frappe.desk.form.save import savedocs
 from frappe.model.db_query import DatabaseQuery
 from frappe.model.document import Document
@@ -84,37 +85,30 @@ class VirtualDoctypeTest(Document):
 
 
 class TestVirtualDoctypes(IntegrationTestCase):
-	@classmethod
-	def setUpClass(cls):
-		frappe.flags.allow_doctype_export = True
-		cls.addClassCleanup(frappe.flags.pop, "allow_doctype_export", None)
+	def setUp(self):
+		super().setUp()
+		directory = self.enterContext(TemporaryDirectory())
+		self.enterContext(patch.object(VirtualDoctypeTest, "DATA_FILE", os.path.join(directory, "data.json")))
 
-		cdt = new_doctype(name=TEST_CHILD_DOCTYPE_NAME, is_virtual=1, istable=1, custom=0).insert()
-		vdt = new_doctype(
-			name=TEST_DOCTYPE_NAME,
-			is_virtual=1,
-			custom=0,
-			fields=[
-				{
-					"label": "Child Table",
-					"fieldname": "child_table",
-					"fieldtype": "Table",
-					"options": TEST_CHILD_DOCTYPE_NAME,
-				}
-			],
-		).insert()
-		cls.addClassCleanup(vdt.delete, force=True)
-		cls.addClassCleanup(cdt.delete, force=True)
-
-		patch_virtual_doc = patch(
-			"frappe.controllers", new={frappe.local.site: {TEST_DOCTYPE_NAME: VirtualDoctypeTest}}
+		insert_test_doctype(self, new_doctype(name=TEST_CHILD_DOCTYPE_NAME, is_virtual=1, istable=1))
+		insert_test_doctype(
+			self,
+			new_doctype(
+				name=TEST_DOCTYPE_NAME,
+				is_virtual=1,
+				fields=[
+					{
+						"label": "Child Table",
+						"fieldname": "child_table",
+						"fieldtype": "Table",
+						"options": TEST_CHILD_DOCTYPE_NAME,
+					}
+				],
+			),
 		)
-		patch_virtual_doc.start()
-		cls.addClassCleanup(patch_virtual_doc.stop)
-
-	def tearDown(self):
-		if os.path.exists(VirtualDoctypeTest.DATA_FILE):
-			os.remove(VirtualDoctypeTest.DATA_FILE)
+		self.enterContext(
+			patch("frappe.controllers", new={frappe.local.site: {TEST_DOCTYPE_NAME: VirtualDoctypeTest}})
+		)
 
 	def test_insert_update_and_load_from_desk(self):
 		"""Insert, update, reload and assert changes"""

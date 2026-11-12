@@ -27,6 +27,7 @@ from frappe.frappeclient import AuthError, FrappeClient
 from frappe.sessions import Session, get_expired_sessions, get_expiry_in_seconds, hash_sid
 from frappe.tests import IntegrationTestCase, UnitTestCase
 from frappe.tests.test_api import FrappeAPITestCase
+from frappe.tests.utils import cleanup_committed_test_data
 from frappe.tests.utils.test_capabilities import TestService, requires_test_service
 from frappe.utils import get_datetime, get_site_url, now
 from frappe.utils.data import add_to_date, sha256_hash
@@ -51,12 +52,15 @@ class TestAuth(IntegrationTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		cls.HOST_NAME = frappe.get_site_config().host_name or get_site_url(frappe.local.site)
-		cls.test_user_email = "test_auth@test.com"
-		cls.test_user_name = "test_auth_user"
+		suffix = frappe.generate_hash(length=10)
+		cls.test_user_email = f"test-auth-{suffix}@example.com"
+		cls.test_user_name = f"test_auth_{suffix}"
 		cls.test_user_mobile = "+911234567890"
 		cls.test_user_password = "pwd_012"
 
-		cls.tearDownClass()
+		cls.addClassCleanup(
+			cleanup_committed_test_data, frappe.delete_doc_if_exists, "User", cls.test_user_email, force=True
+		)
 		add_user(
 			email=cls.test_user_email,
 			password=cls.test_user_password,
@@ -64,19 +68,29 @@ class TestAuth(IntegrationTestCase):
 			mobile_no=cls.test_user_mobile,
 		)
 
-	@classmethod
-	def tearDownClass(cls):
-		frappe.db.rollback()
-		frappe.delete_doc("User", cls.test_user_email, force=True)
-		frappe.local.request_ip = None
-		frappe.form_dict.email = None
-		frappe.local.response["http_status_code"] = None
-		frappe.db.commit()
+	def setUp(self):
+		super().setUp()
+		self.original_settings = {}
+		self.enterContext(
+			patch.dict(frappe.conf, mail_server="localhost", auto_email_id="auth-tests@example.com")
+		)
 
-	def set_system_settings(self, k, v):
-		frappe.db.set_single_value("System Settings", k, v)
+	def set_system_settings(self, key, value, *, publish=False):
+		if key not in self.original_settings:
+			self.original_settings[key] = frappe.db.get_single_value("System Settings", key)
+			self.addCleanup(self.restore_system_setting, key)
+		frappe.db.set_single_value("System Settings", key, value)
 		frappe.clear_cache()
-		frappe.db.commit()
+		if publish:
+			frappe.db.commit()  # nosemgrep
+
+	def restore_system_setting(self, key):
+		frappe.db.rollback()
+		original = self.original_settings[key]
+		if frappe.db.get_single_value("System Settings", key) != original:
+			frappe.db.set_single_value("System Settings", key, original)
+			frappe.db.commit()  # nosemgrep
+		frappe.clear_cache()
 
 	def test_validate_ip_address_without_a_request(self):
 		with (
@@ -179,8 +193,8 @@ class TestAuth(IntegrationTestCase):
 
 	@requires_test_service(TestService.WEB_SERVER)
 	def test_allow_login_using_mobile(self):
-		self.set_system_settings("allow_login_using_mobile_number", 1)
-		self.set_system_settings("allow_login_using_user_name", 0)
+		self.set_system_settings("allow_login_using_mobile_number", 1, publish=True)
+		self.set_system_settings("allow_login_using_user_name", 0, publish=True)
 
 		# Login by both email and mobile should work
 		FrappeClient(self.HOST_NAME, self.test_user_mobile, self.test_user_password)
@@ -192,8 +206,8 @@ class TestAuth(IntegrationTestCase):
 
 	@requires_test_service(TestService.WEB_SERVER)
 	def test_allow_login_using_only_email(self):
-		self.set_system_settings("allow_login_using_mobile_number", 0)
-		self.set_system_settings("allow_login_using_user_name", 0)
+		self.set_system_settings("allow_login_using_mobile_number", 0, publish=True)
+		self.set_system_settings("allow_login_using_user_name", 0, publish=True)
 
 		# Login by mobile number should fail
 		with self.assertRaises(AuthError):
@@ -208,8 +222,8 @@ class TestAuth(IntegrationTestCase):
 
 	@requires_test_service(TestService.WEB_SERVER)
 	def test_allow_login_using_username(self):
-		self.set_system_settings("allow_login_using_mobile_number", 0)
-		self.set_system_settings("allow_login_using_user_name", 1)
+		self.set_system_settings("allow_login_using_mobile_number", 0, publish=True)
+		self.set_system_settings("allow_login_using_user_name", 1, publish=True)
 
 		# Mobile login should fail
 		with self.assertRaises(AuthError):
@@ -221,8 +235,8 @@ class TestAuth(IntegrationTestCase):
 
 	@requires_test_service(TestService.WEB_SERVER)
 	def test_allow_login_using_username_and_mobile(self):
-		self.set_system_settings("allow_login_using_mobile_number", 1)
-		self.set_system_settings("allow_login_using_user_name", 1)
+		self.set_system_settings("allow_login_using_mobile_number", 1, publish=True)
+		self.set_system_settings("allow_login_using_user_name", 1, publish=True)
 
 		# Both email and username and mobile logins should work
 		FrappeClient(self.HOST_NAME, self.test_user_mobile, self.test_user_password)
@@ -231,8 +245,7 @@ class TestAuth(IntegrationTestCase):
 
 	@requires_test_service(TestService.WEB_SERVER)
 	def test_deny_multiple_login(self):
-		self.set_system_settings("deny_multiple_sessions", 1)
-		self.addCleanup(self.set_system_settings, "deny_multiple_sessions", 0)
+		self.set_system_settings("deny_multiple_sessions", 1, publish=True)
 
 		first_login = FrappeClient(self.HOST_NAME, self.test_user_email, self.test_user_password)
 		first_login.get_list("ToDo")
@@ -252,8 +265,7 @@ class TestAuth(IntegrationTestCase):
 	@requires_test_service(TestService.WEB_SERVER)
 	def test_disable_user_pass_login(self):
 		FrappeClient(self.HOST_NAME, self.test_user_email, self.test_user_password).get_list("ToDo")
-		self.set_system_settings("disable_user_pass_login", 1)
-		self.addCleanup(self.set_system_settings, "disable_user_pass_login", 0)
+		self.set_system_settings("disable_user_pass_login", 1, publish=True)
 
 		with self.assertRaises(Exception):
 			FrappeClient(self.HOST_NAME, self.test_user_email, self.test_user_password).get_list("ToDo")
@@ -263,10 +275,8 @@ class TestAuth(IntegrationTestCase):
 		from frappe.utils import add_days, set_request, today
 
 		self.set_system_settings("force_user_to_reset_password", 1)
-		self.addCleanup(self.set_system_settings, "force_user_to_reset_password", 0)
 
 		frappe.db.set_value("User", self.test_user_email, "last_password_reset_date", add_days(today(), -2))
-		frappe.db.commit()
 
 		set_request(method="POST", path="/api/method/login")
 		frappe.form_dict.usr = self.test_user_email
@@ -288,18 +298,13 @@ class TestAuth(IntegrationTestCase):
 		from frappe.auth import LoginManager
 		from frappe.utils import add_days, set_request, today
 
-		system_settings = frappe.get_doc("System Settings")
-		system_settings.enable_two_factor_auth = 1
-		system_settings.two_factor_method = "OTP App"
-		system_settings.flags.ignore_mandatory = True
-		system_settings.save(ignore_permissions=True)
-		self.addCleanup(self.set_system_settings, "enable_two_factor_auth", 0)
+		self.set_system_settings("enable_two_factor_auth", 1)
+		self.set_system_settings("two_factor_method", "OTP App")
+		frappe.db.set_value("Role", "All", "two_factor_auth", 1)
 
 		self.set_system_settings("force_user_to_reset_password", 1)
-		self.addCleanup(self.set_system_settings, "force_user_to_reset_password", 0)
 
 		frappe.db.set_value("User", self.test_user_email, "last_password_reset_date", add_days(today(), -2))
-		frappe.db.commit()
 
 		set_request(method="POST", path="/api/method/login")
 		frappe.form_dict.usr = self.test_user_email
@@ -320,7 +325,6 @@ class TestAuth(IntegrationTestCase):
 		from frappe.utils import add_days, set_request, today
 
 		self.set_system_settings("force_user_to_reset_password", 1)
-		self.addCleanup(self.set_system_settings, "force_user_to_reset_password", 0)
 
 		frappe.db.set_value(
 			"User",
@@ -357,13 +361,33 @@ class TestAuth(IntegrationTestCase):
 			return frappe.local.response.home_page
 
 		self.addCleanup(frappe.form_dict.clear)
-		self.addCleanup(self.set_system_settings, "default_app", "")
 		for doctype, field in (("Website Settings", "home_page"), ("Portal Settings", "default_portal_home")):
 			self.addCleanup(
-				frappe.db.set_single_value, doctype, field, frappe.db.get_single_value(doctype, field)
+				cleanup_committed_test_data,
+				frappe.db.set_single_value,
+				doctype,
+				field,
+				frappe.db.get_single_value(doctype, field),
 			)
-		self.addCleanup(frappe.db.set_value, "Role", "System Manager", "home_page", None)
-		self.addCleanup(frappe.db.set_value, "User", self.test_user_email, "default_workspace", None)
+			frappe.db.set_single_value(doctype, field, None)
+		self.addCleanup(
+			cleanup_committed_test_data,
+			frappe.db.set_value,
+			"Role",
+			"System Manager",
+			"home_page",
+			frappe.db.get_value("Role", "System Manager", "home_page"),
+		)
+		frappe.db.set_value("Role", "System Manager", "home_page", None)
+		self.addCleanup(
+			cleanup_committed_test_data,
+			frappe.db.set_value,
+			"User",
+			self.test_user_email,
+			"default_workspace",
+			None,
+		)
+		self.set_system_settings("default_app", "")
 
 		# only frappe is installed in CI, and the apps screen leaves it out
 		with patch("frappe.apps.get_apps", return_value=[{"name": "test_app", "route": "/desk/test-app"}]):
@@ -392,28 +416,34 @@ class TestAuth(IntegrationTestCase):
 	@requires_test_service(TestService.WEB_SERVER)
 	def test_login_with_email_link(self):
 		user = self.test_user_email
+		rate_limit_keys = [f"rl:frappe.www.login.login_via_key:{ip}:3600" for ip in ("127.0.0.1", "::1")]
+		self.addCleanup(frappe.cache.delete_value, rate_limit_keys)
+		frappe.cache.delete_value(rate_limit_keys)
+		link = _generate_temporary_login_link(user, 10)
 
-		# Logs in
-		res = requests.get(_generate_temporary_login_link(user, 10))
-		self.assertEqual(res.status_code, 200)
-		self.assertTrue(res.cookies.get("sid"))
-		self.assertNotEqual(res.cookies.get("sid"), "Guest")
-
-		# Random incorrect URL
-		res = requests.get(_generate_temporary_login_link(user, 10) + "aa")
-		self.assertEqual(res.cookies.get("sid"), "Guest")
-
-		# POST doesn't work
-		res = requests.post(_generate_temporary_login_link(user, 10))
+		res = requests.post(link)
 		self.assertEqual(res.status_code, 403)
 
-		# Rate limiting
+		res = requests.get(link, allow_redirects=False)
+		self.assertEqual(res.status_code, 302)
+		self.assertTrue(res.cookies.get("sid"))
+		self.assertNotEqual(res.cookies.get("sid"), "Guest")
+		session = requests.get(
+			f"{self.HOST_NAME}/api/method/frappe.auth.get_logged_user", cookies=res.cookies
+		)
+		self.assertEqual(session.status_code, 200)
+		self.assertEqual(session.json()["message"], user)
+
+		res = requests.get(link)
+		self.assertEqual(res.status_code, 403)
+		self.assertEqual(res.cookies.get("sid"), "Guest")
+
 		for _ in range(6):
-			res = requests.get(_generate_temporary_login_link(user, 10))
+			res = requests.get(link)
 			if res.status_code == 429:
 				break
 		else:
-			self.fail("Rate limting not working")
+			self.fail("Rate limiting not working")
 
 	@requires_test_service(TestService.WEB_SERVER)
 	def test_correct_cookie_expiry_set(self):
@@ -477,24 +507,19 @@ class TestIPRestrictionForAPIAuth(IntegrationTestCase):
 	`Authorization` header takes neither path, so `validate_auth` has to enforce it.
 	"""
 
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		cls.user_email = "test_api_ip_restriction@test.com"
-		if not frappe.db.exists("User", cls.user_email):
-			frappe.get_doc(doctype="User", email=cls.user_email, first_name="API IP Restricted").insert(
-				ignore_permissions=True
-			)
-
-		cls.api_secret = generate_keys(cls.user_email)["api_secret"]
-		cls.api_key = frappe.db.get_value("User", cls.user_email, "api_key")
-		frappe.db.commit()
-
 	def setUp(self):
+		super().setUp()
 		self._request = getattr(frappe.local, "request", None)
 		self._request_ip = getattr(frappe.local, "request_ip", None)
 		self._login_manager = getattr(frappe.local, "login_manager", None)
 		self.addCleanup(self._restore)
+		self.user_email = f"test-api-ip-restriction-{frappe.generate_hash(length=8)}@example.com"
+		frappe.get_doc(
+			doctype="User", email=self.user_email, first_name="API IP Restricted", send_welcome_email=0
+		).insert()
+		keys = generate_keys(self.user_email)
+		self.api_key = keys["api_key"]
+		self.api_secret = keys["api_secret"]
 
 	def _restore(self):
 		frappe.local.request = self._request
@@ -556,23 +581,18 @@ class TestAPIKeyAuthFailureLog(IntegrationTestCase):
 
 	SUBJECT = "API key authentication failed%"
 
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		cls.user_email = "test_api_auth_failure@example.com"
-		if not frappe.db.exists("User", cls.user_email):
-			frappe.get_doc(doctype="User", email=cls.user_email, first_name="API Auth Failure").insert(
-				ignore_permissions=True
-			)
-		cls.api_secret = generate_keys(cls.user_email)["api_secret"]
-		cls.api_key = frappe.db.get_value("User", cls.user_email, "api_key")
-
 	def setUp(self):
+		super().setUp()
 		self._request = getattr(frappe.local, "request", None)
 		self._request_ip = getattr(frappe.local, "request_ip", None)
 		self._login_manager = getattr(frappe.local, "login_manager", None)
+		self.user_email = f"test-api-auth-failure-{frappe.generate_hash(length=8)}@example.com"
 		self.addCleanup(self._restore)
 		self._reset()
+		frappe.get_doc(
+			doctype="User", email=self.user_email, first_name="API Auth Failure", send_welcome_email=0
+		).insert()
+		self.api_key = generate_keys(self.user_email)["api_key"]
 
 	def _restore(self):
 		frappe.local.request = self._request
@@ -637,9 +657,10 @@ class TestAPIKeyAuthFailureLog(IntegrationTestCase):
 
 	def test_failed_key_lookup_is_rejected_without_a_log_entry(self):
 		self._request_with(self.api_key, "x")
+		missing_doctype = f"Missing API Auth Source {frappe.generate_hash(length=8)}"
 		frappe.db.savepoint("failed_key_lookup")
 		with self.assertRaises(frappe.AuthenticationError):
-			validate_api_key_secret(self.api_key, "x", frappe_authorization_source="ToDo")
+			validate_api_key_secret(self.api_key, "x", frappe_authorization_source=missing_doctype)
 		frappe.db.rollback(save_point="failed_key_lookup")
 
 		self.assertEqual(self._entries(), [])

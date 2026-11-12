@@ -15,9 +15,8 @@ from frappe.utils.logging import get_log_db
 
 
 class TestLogSettings(IntegrationTestCase):
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
+	def setUp(self) -> None:
+		super().setUp()
 
 		frappe.db.set_single_value(
 			"Log Settings",
@@ -28,7 +27,6 @@ class TestLogSettings(IntegrationTestCase):
 			},
 		)
 
-	def setUp(self) -> None:
 		if self._testMethodName == "test_delete_logs":
 			self.datetime = frappe._dict()
 			self.datetime.current = now_datetime()
@@ -47,6 +45,7 @@ class TestLogSettings(IntegrationTestCase):
 			log_db.commit()
 			del self.log_fixtures
 			del self.datetime
+		super().tearDown()
 
 	def test_delete_logs(self):
 		# make sure test data is present

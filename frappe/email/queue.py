@@ -113,7 +113,8 @@ def unsubscribe(doctype: str, name: str, email: str):
 		frappe.db.rollback()
 
 	else:
-		frappe.db.commit()
+		if not frappe.in_test:
+			frappe.db.commit()
 
 	return_unsubscribed_page(email, doctype, name)
 
@@ -205,4 +206,4 @@ def retry_sending_emails():
 			else:
 				update_fields.update({"status": "Error"})
 				update_fields.update({"error": "Retry Limit Exceeded"})
-			email_queue.update_status(**update_fields, commit=True)
+			email_queue.update_status(**update_fields, commit=not frappe.in_test)

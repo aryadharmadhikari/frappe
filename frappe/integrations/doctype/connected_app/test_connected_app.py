@@ -74,7 +74,9 @@ class TestConnectedApp(IntegrationTestCase):
 		just endpoints) are stored in "Social Login Key" so we get them from
 		there.
 		"""
-		self.user_name = "test-connected-app@example.com"
+		super().setUp()
+		self.addCleanup(self.cleanup_exchange)
+		self.user_name = f"test-connected-app-{frappe.generate_hash(length=8)}@example.com"
 		self.user_password = "Eastern_43A1W"
 
 		self.user = get_user(self.user_name, self.user_password)
@@ -82,10 +84,6 @@ class TestConnectedApp(IntegrationTestCase):
 		self.oauth_client = get_oauth_client()
 		social_login_key = create_or_update_social_login_key()
 		self.base_url = social_login_key.get("base_url")
-
-		frappe.db.commit()
-		self.connected_app.reload()
-		self.oauth_client.reload()
 
 		redirect_uri = self.connected_app.get("redirect_uri")
 		self.oauth_client.update({"redirect_uris": redirect_uri, "default_redirect_uri": redirect_uri})
@@ -238,7 +236,7 @@ class TestConnectedApp(IntegrationTestCase):
 			self.assertFalse(has_token(self.connected_app.name))
 			self.assertRaises(frappe.PermissionError, has_token, self.connected_app.name, self.user_name)
 
-	def tearDown(self):
+	def cleanup_exchange(self):
 		def delete_if_exists(attribute):
 			doc = getattr(self, attribute, None)
 			if doc:

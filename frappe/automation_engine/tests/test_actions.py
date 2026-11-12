@@ -33,8 +33,8 @@ class TestActions(IntegrationTestCase):
 		frappe.local.automation_actions = None
 
 	def tearDown(self):
-		frappe.db.rollback()
 		frappe.local.automation_actions = None
+		super().tearDown()
 
 	def test_registry_contains_core_actions(self):
 		registry = get_action_registry()
@@ -302,9 +302,6 @@ class TestCallWebhook(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
 
-	def tearDown(self):
-		frappe.db.rollback()
-
 	def test_validate_rejects_missing_and_malformed_urls(self):
 		for params in ({}, {"url": "ftp://example.com"}, {"url": "https://"}):
 			self.assertRaises(AutomationParamError, CallWebhook().validate, params, "ToDo")
@@ -448,9 +445,6 @@ class TestRunScript(IntegrationTestCase):
 
 	def setUp(self):
 		frappe.set_user("Administrator")
-
-	def tearDown(self):
-		frappe.db.rollback()
 
 	def test_validate_requires_a_script(self):
 		self.assertRaises(AutomationParamError, RunScript().validate, {}, "ToDo")

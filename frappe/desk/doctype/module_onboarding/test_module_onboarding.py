@@ -4,7 +4,7 @@ import json
 from unittest.mock import patch
 
 import frappe
-from frappe.core.doctype.doctype.test_doctype import new_doctype
+from frappe.core.doctype.doctype.test_doctype import insert_test_doctype, new_doctype
 from frappe.core.doctype.module_def.test_module_def import custom_module
 from frappe.desk.desktop import get_desktop_page, update_onboarding_step
 from frappe.desk.doctype.sidebar.test_sidebar import no_developer_mode
@@ -30,6 +30,7 @@ class OnboardingTestCase(IntegrationTestCase):
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
+		super().tearDown()
 
 	def make_role(self, name: str) -> str:
 		if not frappe.db.exists("Role", name):
@@ -193,19 +194,10 @@ class TestStepCompletion(OnboardingTestCase):
 	thing is, and an onboarding is done the moment its last step is.
 	"""
 
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		cls.record_doctype = new_doctype(custom=1).insert(ignore_permissions=True).name
-		cls.submittable_doctype = new_doctype(custom=1, is_submittable=1).insert(ignore_permissions=True).name
-
-	@classmethod
-	def tearDownClass(cls):
-		# Committed fixtures cannot be removed by the test framework's rollback.
-		for doctype in (cls.record_doctype, cls.submittable_doctype):
-			frappe.delete_doc("DocType", doctype, force=True, ignore_missing=True)
-		frappe.db.commit()  # nosemgrep
-		super().tearDownClass()
+	def setUp(self):
+		self.record_doctype = insert_test_doctype(self, new_doctype(custom=1)).name
+		self.submittable_doctype = insert_test_doctype(self, new_doctype(custom=1, is_submittable=1)).name
+		super().setUp()
 
 	def make_record(self, doctype: str, submit: bool = False):
 		doc = frappe.get_doc({"doctype": doctype, "some_fieldname": "example"})

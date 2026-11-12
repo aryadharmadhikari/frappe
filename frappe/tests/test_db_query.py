@@ -5,7 +5,8 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import frappe
-from frappe.core.doctype.doctype.test_doctype import new_doctype
+from frappe.core.doctype.doctype.test_doctype import insert_test_doctype, new_doctype
+from frappe.core.doctype.user.test_user import test_user
 from frappe.core.page.permission_manager.permission_manager import add, reset, update
 from frappe.custom.doctype.property_setter.property_setter import make_property_setter
 from frappe.database.utils import DefaultOrderBy
@@ -13,7 +14,7 @@ from frappe.desk.reportview import get_filters_cond
 from frappe.handler import execute_cmd
 from frappe.model import get_permitted_fields
 from frappe.model.db_query import DatabaseQuery, get_between_date_filter
-from frappe.permissions import add_user_permission, clear_user_permissions_for_doctype
+from frappe.permissions import add_user_permission
 from frappe.query_builder import Field
 from frappe.tests import IntegrationTestCase
 from frappe.tests.test_helpers import setup_for_tests
@@ -437,11 +438,8 @@ class TestDBQuery(IntegrationTestCase):
 			self.assertEqual(result[0].child_value, "Child")
 
 	def test_build_match_conditions(self):
-		clear_user_permissions_for_doctype("Test Blog Post", "test2@example.com")
-
-		test2user = frappe.get_doc("User", "test2@example.com")
-		test2user.add_roles("Blogger")
-		frappe.set_user("test2@example.com")
+		user = self.enterContext(test_user(roles=["Blogger"]))
+		self.enterContext(self.set_user(user.name))
 
 		# this will get match conditions for Blog Post
 		build_match_conditions = DatabaseQuery("Test Blog Post").build_match_conditions
@@ -452,8 +450,8 @@ class TestDBQuery(IntegrationTestCase):
 		# get as conditions
 		self.assertEqual(build_match_conditions(as_condition=True), "")
 
-		add_user_permission("Test Blog Post", "_Test Blog Post", "test2@example.com", True)
-		add_user_permission("Test Blog Post", "_Test Blog Post 1", "test2@example.com", True)
+		add_user_permission("Test Blog Post", "_Test Blog Post", user.name, True)
+		add_user_permission("Test Blog Post", "_Test Blog Post 1", user.name, True)
 
 		# After applying user permission
 		# get as filters
@@ -468,8 +466,6 @@ class TestDBQuery(IntegrationTestCase):
 			assertion_string = """(((ifnull(cast(`tabTest Blog Post`.`name` as varchar), '')='' or cast(`tabTest Blog Post`.`name` as varchar) in ('_Test Blog Post 1', '_Test Blog Post'))))"""
 
 		self.assertEqual(build_match_conditions(as_condition=True), assertion_string)
-
-		frappe.set_user("Administrator")
 
 	def test_fields(self):
 		self.assertTrue(
@@ -961,29 +957,22 @@ class TestDBQuery(IntegrationTestCase):
 
 	def test_nested_permission(self):
 		frappe.set_user("Administrator")
-		create_nested_doctype()
+		create_nested_doctype(self)
 		create_nested_doctype_records()
-		clear_user_permissions_for_doctype("Nested DocType")
 
 		# user permission for only one root folder
 		add_user_permission("Nested DocType", "Level 1 A", "test2@example.com")
-
-		from frappe.core.page.permission_manager.permission_manager import update
-
-		# to avoid if_owner filter
-		update("Nested DocType", "All", 0, "if_owner", 0)
 
 		with self.set_user("test2@example.com"):
 			data = DatabaseQuery("Nested DocType").execute()
 
 		# children of root folder (for which we added user permission) should be accessible
 		self.assertTrue({"name": "Level 2 A"} in data)
-		self.assertTrue({"name": "Level 2 A"} in data)
+		self.assertTrue({"name": "Level 3 A"} in data)
 
 		# other folders should not be accessible
 		self.assertFalse({"name": "Level 1 B"} in data)
 		self.assertFalse({"name": "Level 2 B"} in data)
-		update("Nested DocType", "All", 0, "if_owner", 1)
 
 	def test_filter_sanitizer(self):
 		self.assertRaises(
@@ -1103,7 +1092,8 @@ class TestDBQuery(IntegrationTestCase):
 
 	def test_of_not_of_descendant_ancestors(self):
 		frappe.set_user("Administrator")
-		clear_user_permissions_for_doctype("Nested DocType")
+		create_nested_doctype(self)
+		create_nested_doctype_records()
 
 		# in descendants filter
 		data = frappe.get_all("Nested DocType", {"name": ("descendants of", "Level 2 A")})
@@ -2161,22 +2151,18 @@ def create_event(subject="_Test Event", starts_on=None):
 	).insert(ignore_permissions=True)
 
 
-def create_nested_doctype():
-	if frappe.db.exists("DocType", "Nested DocType"):
-		return
-
-	frappe.get_doc(
-		{
-			"doctype": "DocType",
-			"name": "Nested DocType",
-			"module": "Custom",
-			"is_tree": 1,
-			"custom": 1,
-			"autoname": "Prompt",
-			"fields": [{"label": "Description", "fieldname": "description"}],
-			"permissions": [{"role": "Blogger"}],
-		}
-	).insert()
+def create_nested_doctype(test):
+	insert_test_doctype(
+		test,
+		new_doctype(
+			"Nested DocType",
+			module="Custom",
+			is_tree=1,
+			autoname="Prompt",
+			fields=[{"label": "Description", "fieldname": "description"}],
+			permissions=[{"role": "All", "read": 1}],
+		),
+	)
 
 
 def create_nested_doctype_records():

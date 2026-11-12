@@ -1,9 +1,9 @@
 # Copyright (c) 2015, Frappe Technologies Pvt. Ltd. and Contributors
 # License: MIT. See LICENSE
 import frappe
-from frappe.core.doctype.user.test_user import test_user
 from frappe.model.document import unlock_document
 from frappe.tests import IntegrationTestCase
+from frappe.tests.baseline import DESK_USER
 from frappe.utils.data import add_to_date, today
 
 
@@ -25,7 +25,7 @@ class TestDocumentLocks(IntegrationTestCase):
 		todo.lock()
 		self.addCleanup(todo.unlock)
 
-		with test_user(roles=["Desk User"]) as user, self.set_user(user.name):
+		with self.set_user(DESK_USER):
 			self.assertRaises(frappe.PermissionError, unlock_document, "ToDo", todo.name)
 		self.assertTrue(todo.is_locked)
 

@@ -21,11 +21,14 @@ from contextlib import contextmanager
 from unittest.mock import patch
 
 import frappe
+from frappe.desk.doctype.dock.dock import drop_dock_caches
 from frappe.desk.doctype.sidebar.sidebar import clear_computed_base_cache, item_key, resolve_sidebar
 from frappe.desk.doctype.sidebar.test_sidebar import make_sidebar, no_developer_mode
 from frappe.desk.doctype.workspace.workspace import PRIVATE_MODULE
+from frappe.model.document import Document
 from frappe.patches.v16_0.sidebar_archive import layer_rows, write_user_layer
 from frappe.tests import IntegrationTestCase
+from frappe.tests.utils import cleanup_committed_test_data
 
 # in the order `patches.txt` runs them
 CONVERSION = (
@@ -86,7 +89,90 @@ def run_conversion() -> list[str]:
 	return lines
 
 
-class TestV16Upgrade(IntegrationTestCase):
+class MigratedSidebarTestCase(IntegrationTestCase):
+	fixture_doctypes = (
+		"Desktop Icon",
+		"Workspace Sidebar",
+		"Custom Sidebar",
+		"Sidebar",
+		"Report",
+		"Workspace",
+		"Module Def",
+		"Dock",
+		"Contact",
+		"User",
+		"Role",
+	)
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.existing_archive = frappe.get_all("Workspace Sidebar", pluck="name")
+		docks = [
+			frappe.get_doc("Dock", name).as_dict()
+			for name in frappe.get_all("Dock", {"standard": 0, "user": ["is", "not set"]}, pluck="name")
+		]
+		created = {doctype: set() for doctype in cls.fixture_doctypes}
+		cls.addClassCleanup(frappe.clear_cache)
+		cls.addClassCleanup(cleanup_committed_test_data, cls.remove_fixture, created, docks)
+		insert = Document.db_insert
+
+		def insert_fixture(doc, ignore_if_duplicate=False):
+			track = doc.doctype in created and (
+				not ignore_if_duplicate or not doc.name or not frappe.db.exists(doc.doctype, doc.name)
+			)
+			insert(doc, ignore_if_duplicate=ignore_if_duplicate)
+			if track:
+				created[doc.doctype].add(doc.name)
+
+		with cls.fixture_archive(), patch.object(Document, "db_insert", insert_fixture):
+			cls.build_fixture()
+		frappe.db.commit()
+
+	@classmethod
+	@contextmanager
+	def fixture_archive(cls):
+		get_all = frappe.get_all
+
+		def get_fixture_rows(doctype, *args, **kwargs):
+			if doctype == "Workspace Sidebar" and cls.existing_archive:
+				filters = kwargs.get("filters", {})
+				if "name" not in filters:
+					kwargs["filters"] = {**filters, "name": ["not in", cls.existing_archive]}
+			return get_all(doctype, *args, **kwargs)
+
+		with patch.object(frappe, "get_all", get_fixture_rows):
+			yield
+
+	def setUp(self):
+		super().setUp()
+		self.enterContext(self.fixture_archive())
+		self.addCleanup(frappe.clear_cache)
+
+	@classmethod
+	def remove_fixture(cls, created, docks):
+		frappe.set_user("Administrator")
+		if modules := sorted(created["Module Def"]):
+			frappe.db.delete("Block Module", {"parenttype": "User", "module": ["in", modules]})
+		with no_developer_mode():
+			for doctype, names in created.items():
+				for name in sorted(names):
+					frappe.delete_doc(doctype, name, force=True, delete_permanently=True)
+
+		for dock in docks:
+			if frappe.db.exists("Dock", dock.name):
+				if frappe.get_doc("Dock", dock.name).as_dict() == dock:
+					continue
+				doc = frappe.get_doc(dock)
+				doc.db_update()
+				doc.update_children()
+			else:
+				frappe.get_doc(dock).insert()
+			frappe.clear_document_cache("Dock", dock.name)
+		drop_dock_caches(None)
+
+
+class TestV16Upgrade(MigratedSidebarTestCase):
 	"""One seeded v16 site, and what its modules resolve to afterwards."""
 
 	MODULE = "Test V16 Module"
@@ -99,10 +185,7 @@ class TestV16Upgrade(IntegrationTestCase):
 	USER = "test-v16-upgrade@example.com"
 
 	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		frappe.set_user("Administrator")
-
+	def build_fixture(cls):
 		with no_developer_mode():
 			for module in (cls.MODULE, cls.QUIET_MODULE, cls.SHIPPED_MODULE):
 				frappe.get_doc(
@@ -143,7 +226,7 @@ class TestV16Upgrade(IntegrationTestCase):
 				"send_welcome_email": 0,
 				"roles": [{"role": "System Manager"}],
 			}
-		).insert(ignore_if_duplicate=True)
+		).insert()
 
 		# The kind of page the private container below hangs off: one a person owns.
 		frappe.get_doc(
@@ -195,7 +278,7 @@ class TestV16Upgrade(IntegrationTestCase):
 
 		# An app that *has* re-exported: it ships the module's sidebar in the current model, and
 		# its old fixture is still sitting in the archive saying something different.
-		cls.shipped = make_sidebar(cls.SHIPPED_MODULE)
+		make_sidebar(cls.SHIPPED_MODULE)
 		archive(
 			"V16 Re-exported",
 			[{"type": "Link", "link_type": "Report", "link_to": cls.SHIPPED_REPORT, "label": "Old"}],
@@ -209,18 +292,16 @@ class TestV16Upgrade(IntegrationTestCase):
 		# never find, so they are cleared and the conversion starts from what v16 actually left.
 		for name in frappe.get_all(
 			"Custom Sidebar",
-			filters={"module": ["in", [cls.MODULE, cls.QUIET_MODULE, cls.SHIPPED_MODULE, PRIVATE_MODULE]]},
+			filters={
+				"module": ["in", [cls.MODULE, cls.QUIET_MODULE, cls.SHIPPED_MODULE, PRIVATE_MODULE]],
+				"user": cls.USER,
+			},
 			pluck="name",
 		):
 			frappe.delete_doc("Custom Sidebar", name, force=True, ignore_permissions=True)
 
 		cls.before = frappe.db.count("Workspace Sidebar"), frappe.db.count("Workspace Sidebar Item")
 		cls.output = run_conversion()
-
-	@classmethod
-	def tearDownClass(cls):
-		frappe.clear_cache()
-		super().tearDownClass()
 
 	def resolved(self, user=None):
 		"""What the module resolves to for this user, asked of the resolver itself."""
@@ -537,7 +618,7 @@ class TestTheIntermediateColumnIsGone(IntegrationTestCase):
 		self.assertNotIn("sidebar_items", patches)
 
 
-class TestALinkThatNoLongerResolves(IntegrationTestCase):
+class TestALinkThatNoLongerResolves(MigratedSidebarTestCase):
 	"""A v16 site's rows outlive the things they point at, and the migrate has to survive that.
 
 	The archive has been filling up for two release lines, and nothing pruned it when an app
@@ -555,10 +636,7 @@ class TestALinkThatNoLongerResolves(IntegrationTestCase):
 	USER = "test-v16-dangling@example.com"
 
 	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		frappe.set_user("Administrator")
-
+	def build_fixture(cls):
 		with no_developer_mode():
 			frappe.get_doc(
 				{"doctype": "Module Def", "module_name": cls.MODULE, "app_name": "frappe"}
@@ -573,7 +651,7 @@ class TestALinkThatNoLongerResolves(IntegrationTestCase):
 				"send_welcome_email": 0,
 				"roles": [{"role": "System Manager"}],
 			}
-		).insert(ignore_if_duplicate=True)
+		).insert()
 
 		# One row that still resolves and one that does not, because a sidebar of nothing but dead
 		# links would convert even if the dead one were quietly dropped.
@@ -585,11 +663,6 @@ class TestALinkThatNoLongerResolves(IntegrationTestCase):
 		archive(f"V16 Dangling-{cls.USER}", items, module=cls.MODULE, for_user=cls.USER, ignore_links=True)
 
 		cls.output = run_conversion()
-
-	@classmethod
-	def tearDownClass(cls):
-		frappe.clear_cache()
-		super().tearDownClass()
 
 	def test_the_doctype_really_is_gone(self):
 		"""The premise. If something ever creates it, these tests would pass without testing
@@ -609,7 +682,7 @@ class TestALinkThatNoLongerResolves(IntegrationTestCase):
 		self.assertTrue(frappe.db.exists("Custom Sidebar", {"module": self.MODULE, "user": self.USER}))
 
 
-class TestRowTypesTheNewSidebarDropped(IntegrationTestCase):
+class TestRowTypesTheNewSidebarDropped(MigratedSidebarTestCase):
 	"""v16's sidebar editor offered `Spacer` and `Sidebar Item Group` rows. A site that used either
 	must still migrate: spacers carry over, and the report-group button, whose doctype is gone, is
 	left behind.
@@ -619,10 +692,7 @@ class TestRowTypesTheNewSidebarDropped(IntegrationTestCase):
 	USER = "test-v16-spacer@example.com"
 
 	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		frappe.set_user("Administrator")
-
+	def build_fixture(cls):
 		with no_developer_mode():
 			frappe.get_doc(
 				{"doctype": "Module Def", "module_name": cls.MODULE, "app_name": "frappe"}
@@ -631,7 +701,7 @@ class TestRowTypesTheNewSidebarDropped(IntegrationTestCase):
 
 		frappe.get_doc(
 			{"doctype": "User", "email": cls.USER, "first_name": "V16 Spacer", "send_welcome_email": 0}
-		).insert(ignore_if_duplicate=True).add_roles("Desk User")
+		).insert().add_roles("Desk User")
 
 		items = [
 			{"type": "Link", "link_type": "DocType", "link_to": "ToDo", "label": "Todos"},
@@ -646,11 +716,6 @@ class TestRowTypesTheNewSidebarDropped(IntegrationTestCase):
 		archive("V16 More Spacers ".ljust(140, "x"), [{"type": "Spacer"}], module=cls.MODULE, standard=1)
 		archive(f"V16 Spacers-{cls.USER}", items, module=cls.MODULE, for_user=cls.USER)
 		cls.output = run_conversion()
-
-	@classmethod
-	def tearDownClass(cls):
-		frappe.clear_cache()
-		super().tearDownClass()
 
 	def base_types(self):
 		return [row.type for row in frappe.get_doc("Sidebar", {"module": self.MODULE}).items]
@@ -678,7 +743,7 @@ class TestRowTypesTheNewSidebarDropped(IntegrationTestCase):
 		self.assertFalse([row for row in spacers if row.added or row.hidden])
 
 
-class TestAnAppThatMovedItsSidebar(IntegrationTestCase):
+class TestAnAppThatMovedItsSidebar(MigratedSidebarTestCase):
 	"""polished hrms ships v16's `Expenses` as the sidebar of a new module `Expenses`, while the v16
 	row still says `HR`. A row is matched by title first, so it is not built again under `HR`.
 	"""
@@ -688,10 +753,7 @@ class TestAnAppThatMovedItsSidebar(IntegrationTestCase):
 	USER = "test-v16-moved@example.com"
 
 	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		frappe.set_user("Administrator")
-
+	def build_fixture(cls):
 		with no_developer_mode():
 			for module in (cls.OLD_MODULE, cls.NEW_MODULE):
 				frappe.get_doc(
@@ -701,18 +763,13 @@ class TestAnAppThatMovedItsSidebar(IntegrationTestCase):
 
 		frappe.get_doc(
 			{"doctype": "User", "email": cls.USER, "first_name": "V16 Moved", "send_welcome_email": 0}
-		).insert(ignore_if_duplicate=True).add_roles("Desk User")
+		).insert().add_roles("Desk User")
 
 		app_sidebar(cls.NEW_MODULE, "V16 Moved", [link("User", "Users")])
 		items = [{"type": "Link", "link_type": "DocType", "link_to": "ToDo", "label": "Todos"}]
 		archive("V16 Moved", items, module=cls.OLD_MODULE, standard=1)
 		archive(f"V16 Moved-{cls.USER}", items, module=cls.OLD_MODULE, for_user=cls.USER)
 		run_conversion()
-
-	@classmethod
-	def tearDownClass(cls):
-		frappe.clear_cache()
-		super().tearDownClass()
 
 	def test_the_old_module_gets_no_second_copy(self):
 		self.assertFalse(frappe.db.exists("Sidebar", {"module": self.OLD_MODULE}))
@@ -722,7 +779,7 @@ class TestAnAppThatMovedItsSidebar(IntegrationTestCase):
 		self.assertFalse(frappe.db.exists("Custom Sidebar", {"module": self.OLD_MODULE, "user": self.USER}))
 
 
-class TestCustomSidebars(IntegrationTestCase):
+class TestCustomSidebars(MigratedSidebarTestCase):
 	"""A sidebar the site made in v16 becomes a custom module of its own.
 
 	It cannot stay under the module v16 filed it in, since that module has the app's sidebar now
@@ -747,10 +804,7 @@ class TestCustomSidebars(IntegrationTestCase):
 	OTHER_USER = "test-v16-custom-other@example.com"
 
 	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		frappe.set_user("Administrator")
-
+	def build_fixture(cls):
 		with no_developer_mode():
 			for module in (cls.HOST, cls.CLASH):
 				frappe.get_doc(
@@ -767,7 +821,7 @@ class TestCustomSidebars(IntegrationTestCase):
 		for user in (cls.USER, cls.OTHER_USER):
 			frappe.get_doc(
 				{"doctype": "User", "email": user, "first_name": "V16 Custom", "send_welcome_email": 0}
-			).insert(ignore_if_duplicate=True).add_roles("Desk User")
+			).insert().add_roles("Desk User")
 
 		# the app's own sidebar for the module the site filed its sidebars under
 		make_sidebar(cls.HOST)
@@ -796,9 +850,7 @@ class TestCustomSidebars(IntegrationTestCase):
 
 		# v16 showed a sidebar to whoever its desktop icon showed to: the icon's roles, and those of
 		# the folder it sat in
-		frappe.get_doc({"doctype": "Role", "role_name": cls.GATED_ROLE, "desk_access": 1}).insert(
-			ignore_if_duplicate=True
-		)
+		frappe.get_doc({"doctype": "Role", "role_name": cls.GATED_ROLE, "desk_access": 1}).insert()
 		frappe.get_doc("User", cls.USER).add_roles(cls.GATED_ROLE)
 		for title in (cls.GATED, cls.OPEN_ICON, cls.IN_FOLDER):
 			archive(title, items, module=cls.HOST)
@@ -816,7 +868,7 @@ class TestCustomSidebars(IntegrationTestCase):
 				"first_name": "V16 Manager",
 				"send_welcome_email": 0,
 			}
-		).insert(ignore_if_duplicate=True).add_roles("System Manager")
+		).insert().add_roles("System Manager")
 		archive(cls.IN_APP, items, module=cls.HOST)
 		desktop_icon("V16 App Parent", icon_type="App", app="frappe")
 		desktop_icon(cls.IN_APP, link_to=cls.IN_APP, parent_icon="V16 App Parent")
@@ -850,11 +902,6 @@ class TestCustomSidebars(IntegrationTestCase):
 		archive(f"{cls.GENERATED}-{cls.OTHER_USER}", [home(cls.GENERATED), items[0]], for_user=cls.OTHER_USER)
 
 		cls.output = run_conversion()
-
-	@classmethod
-	def tearDownClass(cls):
-		frappe.clear_cache()
-		super().tearDownClass()
 
 	def test_each_becomes_a_custom_module(self):
 		module = frappe.get_doc("Module Def", self.SHOWROOM)
@@ -985,7 +1032,7 @@ class TestCustomSidebars(IntegrationTestCase):
 		self.assertEqual(before, after)
 
 
-class TestV16GeneratedSidebarCleanup(IntegrationTestCase):
+class TestV16GeneratedSidebarCleanup(MigratedSidebarTestCase):
 	"""A site that ran the earlier conversion holds a custom module per sidebar v16 generated from
 	an app's workspace, beside the app's own module. The cleanup takes them out again."""
 
@@ -999,10 +1046,7 @@ class TestV16GeneratedSidebarCleanup(IntegrationTestCase):
 	USER = "test-v16-cleanup@example.com"
 
 	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		frappe.set_user("Administrator")
-
+	def build_fixture(cls):
 		with no_developer_mode():
 			for module in (cls.HELD, cls.BARE):
 				frappe.get_doc(
@@ -1014,7 +1058,7 @@ class TestV16GeneratedSidebarCleanup(IntegrationTestCase):
 
 		frappe.get_doc(
 			{"doctype": "User", "email": cls.USER, "first_name": "V16 Cleanup", "send_welcome_email": 0}
-		).insert(ignore_if_duplicate=True).add_roles("Desk User")
+		).insert().add_roles("Desk User")
 
 		rows = (
 			(cls.HELD_ROW, cls.HELD),
@@ -1073,16 +1117,15 @@ class TestV16GeneratedSidebarCleanup(IntegrationTestCase):
 				"content": "[]",
 			}
 		).insert(ignore_permissions=True)
-		frappe.get_doc(
-			{
-				"doctype": "Dock",
-				"app": "frappe",
-				"user": "",
-				"items": [
-					{"link_type": "Sidebar", "link_to": f"{cls.HELD_ROW} (Custom)", "title": cls.HELD_ROW}
-				],
-			}
-		).insert(ignore_permissions=True)
+		dock_name = frappe.db.get_value("Dock", {"app": "frappe", "standard": 0, "user": ["is", "not set"]})
+		dock = (
+			frappe.get_doc("Dock", dock_name) if dock_name else frappe.get_doc(doctype="Dock", app="frappe")
+		)
+		dock.set(
+			"items",
+			[{"link_type": "Sidebar", "link_to": f"{cls.HELD_ROW} (Custom)", "title": cls.HELD_ROW}],
+		)
+		dock.save(ignore_permissions=True)
 
 		cls.output = []
 		with (
@@ -1109,11 +1152,6 @@ class TestV16GeneratedSidebarCleanup(IntegrationTestCase):
 		user = frappe.get_doc("User", cls.USER)
 		user.append("block_modules", {"module": module})
 		user.save(ignore_permissions=True)
-
-	@classmethod
-	def tearDownClass(cls):
-		frappe.clear_cache()
-		super().tearDownClass()
 
 	def test_the_extra_module_goes(self):
 		"""With its sidebar and the page `Module Def.after_insert` made for it."""

@@ -8,6 +8,7 @@ from frappe.core.doctype.scheduled_job_type.scheduled_job_type import ScheduledJ
 from frappe.core.doctype.server_script.server_script import ServerScript
 from frappe.frappeclient import FrappeClient, FrappeException
 from frappe.tests import IntegrationTestCase
+from frappe.tests.utils import cleanup_committed_test_data
 from frappe.tests.utils.test_capabilities import TestService, requires_test_service
 from frappe.utils import get_site_url
 from frappe.utils.password import Auth, encrypt, get_decrypted_password
@@ -116,26 +117,20 @@ class TestServerScript(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
-		frappe.db.truncate("Server Script")
-		frappe.get_doc("User", "Administrator").add_roles("Script Manager")
-		for script in scripts:
-			script_doc = frappe.get_doc(doctype="Server Script")
-			script_doc.update(script)
-			script_doc.insert()
 		cls.enterClassContext(cls.enable_safe_exec())
-		frappe.db.commit()
-		return super().setUpClass()
-
-	@classmethod
-	def tearDownClass(cls):
-		frappe.db.delete("__Auth", {"doctype": "Server Script Variable"})
-		frappe.db.commit()
-		frappe.db.truncate("Server Script")
-		frappe.db.truncate("Server Script Variable")
-		frappe.client_cache.delete_value("server_script_map")
+		for script in scripts:
+			script_doc = frappe.get_doc(doctype="Server Script", **script)
+			script_doc.insert()
+			cls.addClassCleanup(
+				cleanup_committed_test_data, frappe.delete_doc_if_exists, "Server Script", script_doc.name
+			)
+		cls.addClassCleanup(frappe.client_cache.delete_value, "server_script_map")
+		frappe.db.commit()  # nosemgrep
 
 	def setUp(self):
+		super().setUp()
 		frappe.client_cache.delete_value("server_script_map")
+		frappe.db.after_rollback.add(lambda: frappe.client_cache.delete_value("server_script_map"))
 
 	def test_doctype_event(self):
 		todo = frappe.get_doc(doctype="ToDo", description="hello").insert()
@@ -279,6 +274,9 @@ frappe.qb.from_(todo).select(todo.name).where(todo.name == "{todo.name}").run()
 		)
 
 		script1.insert()
+		self.addCleanup(
+			cleanup_committed_test_data, frappe.delete_doc_if_exists, "Server Script", script1.name
+		)
 
 		script2 = frappe.get_doc(
 			doctype="Server Script",
@@ -292,6 +290,9 @@ frappe.qb.from_(todo).select(todo.name).where(todo.name == "{todo.name}").run()
 		)
 
 		script2.insert()
+		self.addCleanup(
+			cleanup_committed_test_data, frappe.delete_doc_if_exists, "Server Script", script2.name
+		)
 
 		# Rate-limit counters outlive database rollbacks, so isolate this test
 		# from earlier runs. The final part of the key is the request IP.
@@ -316,10 +317,6 @@ frappe.qb.from_(todo).select(todo.name).where(todo.name == "{todo.name}").run()
 			client.get_api(script2.api_method)
 
 		self.assertRaises(FrappeException, client.get_api, script2.api_method)
-
-		script1.delete()
-		script2.delete()
-		frappe.db.commit()
 
 	def test_server_script_scheduled(self):
 		scheduled_script = frappe.get_doc(

@@ -6,15 +6,15 @@ import frappe
 from frappe.core.doctype.user.test_user import test_user
 from frappe.desk.doctype.dashboard_settings.dashboard_settings import create_dashboard_settings
 from frappe.tests import IntegrationTestCase
+from frappe.tests.baseline import DESK_USER
 
 
 class TestDashboardSettings(IntegrationTestCase):
 	def test_create_dashboard_settings_only_for_the_session_user(self):
 		with (
-			test_user(roles=["Desk User"]) as user,
 			test_user(roles=["Desk User"]) as other,
-			self.set_user(user.name),
+			self.set_user(DESK_USER),
 			patch.object(frappe.db, "commit"),
 		):
 			self.assertRaises(frappe.PermissionError, create_dashboard_settings, other.name)
-			self.assertEqual(create_dashboard_settings(user.name).name, user.name)
+			self.assertEqual(create_dashboard_settings(DESK_USER).name, DESK_USER)

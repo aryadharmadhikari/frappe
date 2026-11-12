@@ -20,8 +20,10 @@ from frappe.core.doctype.data_import.importer import (
 	get_tree_alias_fieldname,
 	uses_tree_alias_references,
 )
+from frappe.core.doctype.translation.translation import clear_user_translation_cache
 from frappe.tests import IntegrationTestCase
 from frappe.tests.test_query_builder import db_type_is, unimplemented_for
+from frappe.tests.utils import cleanup_committed_test_data
 from frappe.utils import cint, flt, format_duration, getdate
 from frappe.utils.number_format import NumberFormat
 
@@ -35,29 +37,25 @@ def _delete_data_import(data_import_name):
 		return
 	frappe.db.delete("Data Import Log", {"data_import": data_import_name})
 	frappe.delete_doc("Data Import", data_import_name, force=1, ignore_permissions=True)
-	frappe.db.commit()  # nosemgrep
 
 
 def _delete_file(file_name):
 	if not file_name or not frappe.db.exists("File", file_name):
 		return
 	frappe.delete_doc("File", file_name, force=1, ignore_permissions=True)
-	frappe.db.commit()  # nosemgrep
 
 
 def _delete_doctype_records(doctype, names):
 	for name in names:
 		if name:
 			frappe.delete_doc_if_exists(doctype, name, force=1)
-	frappe.db.commit()  # nosemgrep
 
 
 def _delete_import_doc(doctype, name):
-	"""Remove an import document and its logs; Importer commits them row by row."""
+	"""Remove an import document and its logs."""
 	for log in frappe.get_all("Data Import Log", filters={"data_import": name}, pluck="name"):
 		frappe.delete_doc("Data Import Log", log, force=1, ignore_permissions=True)
 	frappe.delete_doc(doctype, name, force=1, ignore_permissions=True)
-	frappe.db.commit()  # nosemgrep
 
 
 def _register_data_import_cleanup(test_case, data_import):
@@ -112,13 +110,43 @@ def _provider_hooks(provider):
 	return {"data_import_providers": {doctype_name: [f"{__name__}.{provider.__name__}"]}}
 
 
-class TestImporter(IntegrationTestCase):
+class ImporterTestCase(IntegrationTestCase):
+	def setUp(self):
+		super().setUp()
+		import_data = Importer.import_data
+
+		def import_in_test_transaction(importer):
+			return import_data(importer, commit=False)
+
+		self.enterContext(patch.object(Importer, "import_data", import_in_test_transaction))
+
+	@classmethod
+	def register_schema_cleanup(cls, *doctypes):
+		from frappe.core.doctype.doctype.test_doctype import _remove_test_doctype
+
+		for doctype in doctypes:
+			if not frappe.db.exists("DocType", doctype):
+				doc = frappe.get_doc(doctype="DocType", name=doctype)
+				cls.addClassCleanup(cleanup_committed_test_data, _remove_test_doctype, doc)
+
+
+class TestImporter(ImporterTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
-		create_doctype_if_not_exists(
-			doctype_name,
-		)
+		user = frappe.get_doc("User", "test@example.com")
+		if not any(role.role == "System Manager" for role in user.roles):
+			cls.addClassCleanup(cleanup_committed_test_data, cls.remove_import_role, user.name)
+			user.add_roles("System Manager")
+		cls.register_schema_cleanup("Child 1 of " + doctype_name, "Child 2 of " + doctype_name, doctype_name)
+		create_doctype_if_not_exists(doctype_name)
+		frappe.db.commit()  # nosemgrep
+		frappe.clear_cache(user=user.name)
+
+	@staticmethod
+	def remove_import_role(user):
+		frappe.get_doc("User", user).remove_roles("System Manager")
+		frappe.clear_cache(user=user)
 
 	def test_import_uses_the_document_importer(self):
 		self.addCleanup(_delete_doctype_records, doctype_name, SAMPLE_IMPORT_DOC_NAMES)
@@ -172,7 +200,6 @@ class TestImporter(IntegrationTestCase):
 		self.addCleanup(_delete_doctype_records, doctype_name, ("Test 2", "Test 3"))
 		for name in ("Test", "Test 2", "Test 3"):
 			frappe.delete_doc_if_exists(doctype_name, name)
-		frappe.db.commit()  # ensure deletions are flushed to DB before import; # nosemgrep
 
 		import_file = get_import_file("sample_import_file")
 		data_import = self.get_importer(doctype_name, import_file)
@@ -297,7 +324,7 @@ class TestImporter(IntegrationTestCase):
 			table_field_1=[{"child_title": "child title to update"}],
 		)
 		existing_doc.save()
-		frappe.db.commit()  # ensure saved document is visible to other DB connections; # nosemgrep
+
 		self.addCleanup(_delete_doctype_records, doctype_name, [existing_doc.name])
 
 		import_file = get_import_file("sample_import_file_for_update")
@@ -331,7 +358,6 @@ class TestImporter(IntegrationTestCase):
 			description="old description",
 		)
 		existing_doc.insert()
-		frappe.db.commit()  # nosemgrep
 
 		new_title = frappe.generate_hash(length=8)
 		self.addCleanup(_delete_doctype_records, doctype_name, [existing_doc.name, new_title])
@@ -393,7 +419,7 @@ class TestImporter(IntegrationTestCase):
 			another_number=2,
 		)
 		existing_doc.insert()
-		frappe.db.commit()  # nosemgrep
+
 		self.addCleanup(_delete_doctype_records, doctype_name, [existing_doc.name])
 
 		import_file = get_import_file("sample_import_file_for_update")
@@ -455,7 +481,6 @@ class TestImporter(IntegrationTestCase):
 		self.addCleanup(_delete_doctype_records, doctype_name, SAMPLE_IMPORT_DOC_NAMES)
 		for name in SAMPLE_IMPORT_DOC_NAMES:
 			frappe.delete_doc_if_exists(doctype_name, name)
-		frappe.db.commit()  # nosemgrep
 
 		import_file = get_import_file("sample_import_file")
 		data_import = self.get_importer(doctype_name, import_file)
@@ -465,7 +490,6 @@ class TestImporter(IntegrationTestCase):
 		# "Test" and "Test 3" but failed on "Test 2" before timing out.
 		for name in ("Test", "Test 3"):
 			frappe.get_doc({"doctype": doctype_name, "title": name}).insert()
-		frappe.db.commit()  # nosemgrep
 
 		create_import_log(
 			data_import.name,
@@ -486,7 +510,7 @@ class TestImporter(IntegrationTestCase):
 			2,
 			{"success": True, "docname": "Test 3", "row_indexes": [5]},
 		)
-		frappe.db.commit()  # nosemgrep
+
 		data_import.db_set("status", "Timed Out")
 
 		i = Importer(data_import.reference_doctype, data_import=data_import)
@@ -512,7 +536,6 @@ class TestImporter(IntegrationTestCase):
 			description="old description",
 		)
 		existing_doc.insert()
-		frappe.db.commit()  # nosemgrep
 
 		new_title = frappe.generate_hash(length=8)
 		self.addCleanup(_delete_doctype_records, doctype_name, [existing_doc.name, new_title])
@@ -691,7 +714,7 @@ class TestImporter(IntegrationTestCase):
 			self.assertEqual(get_create_field("Gender"), "gender")
 
 	def test_import_creates_missing_link_records_marked_create_new(self):
-		gender = "Data Import Test Gender"
+		gender = f"Data Import Test Gender {frappe.generate_hash(length=8)}"
 		data_import = self._contact_import_creating_gender(gender, "Zed Create Test")
 
 		data_import.start_import()
@@ -703,18 +726,17 @@ class TestImporter(IntegrationTestCase):
 		self.assertEqual(contact[1], gender)
 
 	def test_import_does_not_create_link_records_for_skipped_rows(self):
-		gender = "Data Import Test Gender Skipped"
+		gender = f"Data Import Test Gender Skipped {frappe.generate_hash(length=8)}"
 		data_import = self._contact_import_creating_gender(gender, "Zed Skipped Test")
 		data_import.append("skipped_rows", {"row_number": 2, "row_data": "[]"})
 		data_import.save()
-		frappe.db.commit()  # nosemgrep
 
 		data_import.start_import()
 		self.assertFalse(frappe.db.exists("Gender", gender))
 		self.assertFalse(frappe.db.exists("Contact", {"first_name": "Zed Skipped Test"}))
 
 	def test_user_with_create_permission_creates_missing_link_records(self):
-		gender = "Data Import Test Gender Allowed"
+		gender = f"Data Import Test Gender Allowed {frappe.generate_hash(length=8)}"
 		data_import = self._contact_import_creating_gender(gender, "Zed Allowed Test")
 
 		with self.set_user("test@example.com"):
@@ -727,7 +749,7 @@ class TestImporter(IntegrationTestCase):
 		self.assertEqual(contact[1], gender)
 
 	def test_user_without_create_permission_gets_the_link_error(self):
-		gender = "Data Import Test Gender Denied"
+		gender = f"Data Import Test Gender Denied {frappe.generate_hash(length=8)}"
 		data_import = self._contact_import_creating_gender(gender, "Zed Denied Test")
 
 		with self.set_user(self._user_without_gender_create()):
@@ -764,7 +786,7 @@ class TestImporter(IntegrationTestCase):
 		mapping.create_new = 1
 		data_import.save()
 		self.assertEqual(data_import.value_mappings[0].create_new, 1)
-		frappe.db.commit()  # nosemgrep
+
 		return data_import
 
 	def _user_without_gender_create(self):
@@ -780,7 +802,7 @@ class TestImporter(IntegrationTestCase):
 					"roles": [{"role": "Sales User"}],
 				}
 			).insert(ignore_permissions=True)
-			frappe.db.commit()  # nosemgrep
+
 			self.addCleanup(_delete_doctype_records, "User", [email])
 		return email
 
@@ -860,10 +882,6 @@ class TestImporter(IntegrationTestCase):
 		from frappe.core.doctype.data_import.importer import ImportFile
 		from frappe.core.doctype.data_import.value_mapping import get_column_invalid_items
 
-		for gender in ("Male", "Female"):
-			if not frappe.db.exists("Gender", gender):
-				frappe.get_doc({"doctype": "Gender", "gender": gender}).insert()
-
 		csv_content = (
 			"\n"
 			"First Name,Last Name,Status,Salutation,Gender\n"
@@ -886,8 +904,6 @@ class TestImporter(IntegrationTestCase):
 
 	def test_link_and_select_warnings_include_row_numbers(self):
 		"""Column warnings for Link/Select list invalid values with 1-based sheet row numbers."""
-		if not frappe.db.exists("Salutation", "Mr"):
-			frappe.get_doc({"doctype": "Salutation", "salutation": "Mr"}).insert()
 		for name in ("Miss", "Ms"):
 			if frappe.db.exists("Salutation", name):
 				frappe.delete_doc("Salutation", name)
@@ -928,6 +944,10 @@ class TestImporter(IntegrationTestCase):
 		table_field.label = original_label  # maintain sanity in test env
 
 	def test_translated_header_maps_after_english_request(self):
+		self.addCleanup(clear_user_translation_cache, "de")
+		frappe.get_doc(
+			doctype="Translation", language="de", source_text="Title", translated_text="Titel"
+		).insert()
 		self.addCleanup(setattr, frappe.local, "lang", frappe.local.lang)
 		self.addCleanup(frappe.local.request_cache.clear)
 
@@ -939,6 +959,10 @@ class TestImporter(IntegrationTestCase):
 		self.assertEqual(get_df_for_column_header(doctype_name, "Titel").fieldname, "title")
 
 	def test_import_maps_headers_in_user_language(self):
+		self.addCleanup(clear_user_translation_cache, "de")
+		frappe.get_doc(
+			doctype="Translation", language="de", source_text="Currency Name", translated_text="Währungsname"
+		).insert()
 		self.addCleanup(setattr, frappe.local, "lang", frappe.local.lang)
 		self.addCleanup(frappe.local.request_cache.clear)
 		frappe.local.lang = "en"
@@ -1002,7 +1026,7 @@ class TestImporter(IntegrationTestCase):
 
 	def test_import_through_doctype_without_payload_count(self):
 		"""Apps pass their own import doctype (e.g. Bank Statement Import) that has no payload_count column."""
-		import_doctype = create_import_doctype_without_payload_count()
+		import_doctype = create_import_doctype_without_payload_count(self)
 		self.addCleanup(_delete_doctype_records, doctype_name, SAMPLE_IMPORT_DOC_NAMES)
 
 		with self.set_user("test@example.com"):
@@ -1090,7 +1114,7 @@ class TestImporter(IntegrationTestCase):
 		data_import.import_file = import_file.file_url
 		data_import.use_csv_sniffer = use_sniffer
 		data_import.insert()
-		frappe.db.commit()  # Commit so that the first import failure does not rollback the Data Import insert.  # nosemgrep
+
 		_register_data_import_cleanup(self, data_import)
 
 		return data_import
@@ -1104,7 +1128,7 @@ class TestImporter(IntegrationTestCase):
 		# deliberately overwrite default delimiter options here, causing to fail when parsing `;`
 		data_import.delimiter_options = ","
 		data_import.insert()
-		frappe.db.commit()  # nosemgrep
+
 		_register_data_import_cleanup(self, data_import)
 
 		return data_import
@@ -1257,16 +1281,11 @@ def create_doctype_if_not_exists(doctype_name, force=False):
 	).insert()
 
 
-def create_import_doctype_without_payload_count():
+def create_import_doctype_without_payload_count(test):
 	"""An import doctype with the fields Importer reads and writes, minus payload_count."""
-	name = "Test Import Without Payload Count"
-	if frappe.db.exists("DocType", name):
-		return name
+	from frappe.core.doctype.doctype.test_doctype import insert_test_doctype, new_doctype
 
-	from frappe.core.doctype.doctype.test_doctype import new_doctype
-
-	new_doctype(
-		name,
+	doc = new_doctype(
 		fields=[
 			{"fieldname": "reference_doctype", "fieldtype": "Data"},
 			{
@@ -1289,8 +1308,8 @@ def create_import_doctype_without_payload_count():
 			{"fieldname": "custom_delimiters", "fieldtype": "Check"},
 			{"fieldname": "delimiter_options", "fieldtype": "Data"},
 		],
-	).insert()
-	return name
+	)
+	return insert_test_doctype(test, doc).name
 
 
 def get_import_file(csv_file_name, force=False):
@@ -1318,13 +1337,15 @@ def get_csv_file_path(file_name):
 	return frappe.get_app_path("frappe", "core", "doctype", "data_import", "fixtures", file_name)
 
 
-class TestTreeDataImport(IntegrationTestCase):
+class TestTreeDataImport(ImporterTestCase):
 	doctype_name = "Test Tree Data Import"
 
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
+		cls.register_schema_cleanup(cls.doctype_name)
 		cls._ensure_tree_doctype()
+		frappe.db.commit()  # nosemgrep
 
 	@classmethod
 	def _ensure_tree_doctype(cls):
@@ -1367,7 +1388,7 @@ class TestTreeDataImport(IntegrationTestCase):
 		data_import.reference_doctype = self.doctype_name
 		data_import.import_file = file_doc.file_url
 		data_import.insert()
-		frappe.db.commit()  # Ensure Data Import insert is persisted before subsequent operations; # nosemgrep
+
 		_register_data_import_cleanup(self, data_import)
 		_register_file_cleanup(self, file_doc)
 		return data_import
@@ -1426,7 +1447,6 @@ class TestTreeDataImport(IntegrationTestCase):
 		# Delete leaves before parents — NestedSet blocks deleting a node with children.
 		for name in ("Leaf", "Division", "Root"):
 			frappe.delete_doc_if_exists(self.doctype_name, name)
-		frappe.db.commit()  # ensure deletions are flushed to DB before import; # nosemgrep
 
 		rows = [
 			("Root", "1", ""),
@@ -1441,7 +1461,6 @@ class TestTreeDataImport(IntegrationTestCase):
 		# Same child-first order for teardown after the import.
 		for name in ("Leaf", "Division", "Root"):
 			frappe.delete_doc_if_exists(self.doctype_name, name)
-		frappe.db.commit()  # nosemgrep
 
 	def test_field_autoname_tree_skips_alias_mode(self):
 		self.assertFalse(uses_tree_alias_references(self.doctype_name))
@@ -1461,13 +1480,15 @@ class TestTreeDataImport(IntegrationTestCase):
 		self.assertIn("Is Group is 0", division.warnings[0])
 
 
-class TestTreeAliasDataImport(IntegrationTestCase):
+class TestTreeAliasDataImport(ImporterTestCase):
 	doctype_name = "Test Tree Alias Import"
 
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
+		cls.register_schema_cleanup(cls.doctype_name)
 		cls._ensure_tree_doctype()
+		frappe.db.commit()  # nosemgrep
 
 	@classmethod
 	def _ensure_tree_doctype(cls):
@@ -1518,7 +1539,7 @@ class TestTreeAliasDataImport(IntegrationTestCase):
 		data_import.reference_doctype = self.doctype_name
 		data_import.import_file = file_doc.file_url
 		data_import.insert()
-		frappe.db.commit()  # Ensure Data Import insert is persisted before subsequent operations; # nosemgrep
+
 		_register_data_import_cleanup(self, data_import)
 		_register_file_cleanup(self, file_doc)
 		return data_import
@@ -1527,7 +1548,6 @@ class TestTreeAliasDataImport(IntegrationTestCase):
 		for label in reversed(labels):
 			for name in frappe.get_all(self.doctype_name, filters={"node_label": label}, pluck="name"):
 				frappe.delete_doc(self.doctype_name, name, force=1)
-		frappe.db.commit()  # Ensure deletions are flushed to DB before continuing; # nosemgrep
 
 	def test_upsert_update_does_not_reset_omitted_defaults(self):
 		"""UPSERT update must not overwrite fields omitted from the template with DocType defaults."""
@@ -1537,7 +1557,6 @@ class TestTreeAliasDataImport(IntegrationTestCase):
 		root = frappe.get_doc(
 			{"doctype": self.doctype_name, "node_label": "Root Node", "is_group": 1}
 		).insert()
-		frappe.db.commit()  # nosemgrep
 
 		rows = [(root.name, "Root Node Updated", "", "")]
 		data_import = self._get_importer(self._make_csv_file(rows, include_id=True), import_type=UPSERT)
@@ -1558,7 +1577,6 @@ class TestTreeAliasDataImport(IntegrationTestCase):
 		root = frappe.get_doc(
 			{"doctype": self.doctype_name, "node_label": "Root Node", "is_group": 1}
 		).insert()
-		frappe.db.commit()  # nosemgrep
 
 		rows = [
 			(root.name, "Root Node", "1", ""),
@@ -1616,7 +1634,6 @@ class TestTreeAliasDataImport(IntegrationTestCase):
 		existing_label = "Existing Root"
 		self._cleanup_docs((existing_label, "New Child"))
 		frappe.get_doc({"doctype": self.doctype_name, "node_label": existing_label, "is_group": 1}).insert()
-		frappe.db.commit()  # nosemgrep
 
 		rows = [("New Child", "0", existing_label)]
 		data_import = self._get_importer(self._make_csv_file(rows))
@@ -1660,7 +1677,6 @@ class TestTreeAliasDataImport(IntegrationTestCase):
 		labels = (existing_label, "Branch A", "Branch B", "Branch C")
 		self._cleanup_docs(labels)
 		frappe.get_doc({"doctype": self.doctype_name, "node_label": existing_label, "is_group": 1}).insert()
-		frappe.db.commit()  # nosemgrep
 
 		rows = [
 			("Branch C", "0", "Branch B"),
@@ -1688,7 +1704,6 @@ class TestTreeAliasDataImport(IntegrationTestCase):
 			frappe.get_doc(
 				{"doctype": self.doctype_name, "node_label": "Shared Root", "is_group": 1}
 			).insert()
-		frappe.db.commit()  # nosemgrep
 
 		data_import = self._get_importer(self._make_csv_file([("New Child", "0", "Shared Root")]))
 		preview = data_import.get_preview_from_template()
@@ -1740,7 +1755,6 @@ class TestTreeAliasDataImport(IntegrationTestCase):
 				parent_field: root.name,
 			}
 		).insert()
-		frappe.db.commit()  # nosemgrep
 
 		rows = [(child.name, "Child Node", "1", "Root Node")]
 		data_import = self._get_importer(self._make_csv_file(rows, include_id=True), update=True)

@@ -41,8 +41,8 @@ class TestRelationships(IntegrationTestCase):
 
 	def tearDown(self):
 		self.hooks.__exit__(None, None, None)
-		frappe.db.rollback()
 		clear_automation_cache()
+		super().tearDown()
 
 	def test_action_updates_related_record_alias(self):
 		note = self._note("before")

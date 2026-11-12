@@ -2,8 +2,10 @@
 # License: MIT. See LICENSE
 
 from unittest import skipIf
+from unittest.mock import patch
 
 import frappe
+from frappe.core.doctype.doctype.test_doctype import _remove_test_doctype, new_doctype
 from frappe.custom.doctype.custom_field.custom_field import (
 	create_custom_field,
 	create_custom_fields,
@@ -12,10 +14,12 @@ from frappe.custom.doctype.custom_field.custom_field import (
 )
 from frappe.custom.doctype.property_setter.property_setter import make_property_setter
 from frappe.tests import IntegrationTestCase
+from frappe.tests.utils import cleanup_committed_test_data
 
 
 class TestCustomField(IntegrationTestCase):
 	def test_create_custom_fields(self):
+		self.enterContext(patch.object(frappe.db, "updatedb"))
 		create_custom_fields(
 			{
 				"Address": [
@@ -37,58 +41,36 @@ class TestCustomField(IntegrationTestCase):
 			}
 		)
 
-		frappe.db.commit()
-
 		self.assertTrue(frappe.db.exists("Custom Field", "Address-_test_custom_field_1"))
 		self.assertTrue(frappe.db.exists("Custom Field", "Address-_test_custom_field_2"))
 		self.assertTrue(frappe.db.exists("Custom Field", "Contact-_test_custom_field_2"))
 
 	def test_custom_field_sorting(self):
-		try:
-			custom_fields = {
-				"ToDo": [
-					{"fieldname": "a_test_field", "insert_after": "b_test_field"},
-					{"fieldname": "b_test_field", "insert_after": "status"},
-					{"fieldname": "c_test_field", "insert_after": "unknown_custom_field"},
-					{"fieldname": "d_test_field", "insert_after": "status"},
-				]
-			}
+		self.enterContext(patch.object(frappe.db, "updatedb"))
+		custom_fields = {
+			"ToDo": [
+				{"fieldname": "a_test_field", "insert_after": "b_test_field"},
+				{"fieldname": "b_test_field", "insert_after": "status"},
+				{"fieldname": "c_test_field", "insert_after": "unknown_custom_field"},
+				{"fieldname": "d_test_field", "insert_after": "status"},
+			]
+		}
 
-			create_custom_fields(custom_fields, ignore_validate=True)
+		create_custom_fields(custom_fields, ignore_validate=True)
 
-			fields = frappe.get_meta("ToDo", cached=False).fields
+		fields = frappe.get_meta("ToDo", cached=False).fields
 
-			for i, field in enumerate(fields):
-				if field.fieldname == "b_test_field":
-					self.assertEqual(fields[i - 1].fieldname, "status")
+		for i, field in enumerate(fields):
+			if field.fieldname == "b_test_field":
+				self.assertEqual(fields[i - 1].fieldname, "status")
 
-				if field.fieldname == "d_test_field":
-					self.assertEqual(fields[i - 1].fieldname, "a_test_field")
+			if field.fieldname == "d_test_field":
+				self.assertEqual(fields[i - 1].fieldname, "a_test_field")
 
-			self.assertEqual(fields[-1].fieldname, "c_test_field")
-
-		finally:
-			frappe.db.delete(
-				"Custom Field",
-				{
-					"dt": "ToDo",
-					"fieldname": (
-						"in",
-						(
-							"a_test_field",
-							"b_test_field",
-							"c_test_field",
-							"d_test_field",
-						),
-					),
-				},
-			)
-
-			# undo changes commited by DDL
-			# nosemgrep
-			frappe.db.commit()
+		self.assertEqual(fields[-1].fieldname, "c_test_field")
 
 	def test_custom_section_and_column_breaks_ordering(self):
+		self.enterContext(patch.object(frappe.db, "updatedb"))
 		doc = frappe.get_doc(
 			{
 				"doctype": "DocType",
@@ -169,6 +151,7 @@ class TestCustomField(IntegrationTestCase):
 		self.assertEqual(field_names, expected_order)
 
 	def test_custom_tab_break_ordering(self):
+		self.enterContext(patch.object(frappe.db, "updatedb"))
 		doc = frappe.get_doc(
 			{
 				"doctype": "DocType",
@@ -206,23 +189,25 @@ class TestCustomField(IntegrationTestCase):
 		def gen_fieldname():
 			return "test_" + frappe.generate_hash()
 
-		field = create_custom_field("ToDo", {"label": gen_fieldname()}, is_system_generated=False)
+		doctype = new_doctype()
+		self.addCleanup(cleanup_committed_test_data, _remove_test_doctype, doctype)
+		doctype.insert()
+		field = create_custom_field(doctype.name, {"label": gen_fieldname()}, is_system_generated=False)
 		old = field.fieldname
 		new = gen_fieldname()
 		data = frappe.generate_hash()
-		doc = frappe.get_doc({"doctype": "ToDo", old: data, "description": "Something"}).insert()
+		doc = frappe.get_doc({"doctype": doctype.name, old: data}).insert()
 
 		rename_fieldname(field.name, new)
 		field.reload()
 		self.assertEqual(field.fieldname, new)
 
-		doc = frappe.get_doc("ToDo", doc.name)  # doc.reload doesn't clear old fields.
+		doc = frappe.get_doc(doctype.name, doc.name)  # doc.reload doesn't clear old fields.
 		self.assertEqual(doc.get(new), data)
 		self.assertFalse(doc.get(old))
 
-		field.delete()
-
 	def test_delete_custom_fields(self):
+		self.enterContext(patch.object(frappe.db, "updatedb"))
 		doctype = "ToDo"
 		fields = [
 			{

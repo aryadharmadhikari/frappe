@@ -17,9 +17,6 @@ from frappe.tests.utils import toggle_test_mode, wait_for_job, whitelist_for_tes
 from frappe.tests.utils.test_capabilities import TestService, requires_test_service
 from frappe.utils import get_test_client, set_request
 
-authorization_token = None
-
-
 resource_key = {
 	"": "resource",
 	"v1": "resource",
@@ -35,18 +32,19 @@ class TestResourceAPIV2(FrappeAPITestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
+		cls.GENERATED_DOCUMENTS = []
 		for _ in range(20):
 			doc = frappe.get_doc({"doctype": "ToDo", "description": frappe.mock("paragraph")}).insert()
-			cls.GENERATED_DOCUMENTS = []
 			cls.GENERATED_DOCUMENTS.append(doc.name)
 		frappe.db.commit()
 
 	@classmethod
 	def tearDownClass(cls):
-		frappe.db.commit()
+		frappe.db.rollback()
 		for name in cls.GENERATED_DOCUMENTS:
 			frappe.delete_doc_if_exists(cls.DOCTYPE, name)
 		frappe.db.commit()
+		super().tearDownClass()
 
 	@requires_test_service(TestService.WEB_SERVER)
 	def test_unauthorized_call_v2(self):
@@ -198,11 +196,12 @@ class TestResourceAPIV2(FrappeAPITestCase):
 
 	def test_copy_document_v2(self):
 		doc = frappe.get_doc(self.DOCTYPE, self.GENERATED_DOCUMENTS[0])
+		sid = self.sid
 
 		# disabled temporarily to assert that `docstatus` is not copied outside of tests
 		toggle_test_mode(False)
 		try:
-			response = self.get(self.resource(self.DOCTYPE, doc.name, "copy"))
+			response = self.get(self.resource(self.DOCTYPE, doc.name, "copy"), {"sid": sid})
 		finally:
 			toggle_test_mode(True)
 
@@ -232,7 +231,9 @@ class TestResourceAPIV2(FrappeAPITestCase):
 		self.GENERATED_DOCUMENTS.remove(doc_to_delete)
 
 	def test_execute_doc_method_v2(self):
-		response = self.get(self.resource("Website Theme", "Standard", "method", "get_apps"))
+		response = self.get(
+			self.resource("Website Theme", "Standard", "method", "get_apps"), {"sid": self.sid}
+		)
 		self.assertEqual(response.json["data"][0]["name"], "frappe")
 
 	def test_execute_doc_method_v2_validates_http_method(self):
@@ -264,7 +265,9 @@ class TestResourceAPIV2(FrappeAPITestCase):
 	def test_delete_document_non_existing_v2(self):
 		non_existent_doc = frappe.generate_hash(length=12)
 		with suppress_stdout():
-			response = self.delete(self.resource(self.DOCTYPE, non_existent_doc))
+			response = self.delete(
+				self.resource(self.DOCTYPE, non_existent_doc), query_string={"sid": self.sid}
+			)
 		self.assertEqual(response.status_code, 404)
 		self.assertEqual(response.json["errors"][0]["type"], "DoesNotExistError")
 		# 404s dont return exceptions
@@ -494,18 +497,14 @@ class TestMethodAPIV2(FrappeAPITestCase):
 		self.assertEqual(response.json.get("data"), {})
 
 	def test_auth_cycle_v2(self):
-		global authorization_token
-
-		generate_admin_keys()
-		user = frappe.get_doc("User", "Administrator")
-		api_key, api_secret = user.api_key, user.get_password("api_secret")
-		authorization_token = f"{api_key}:{api_secret}"
-		response = self.get(self.method("frappe.auth.get_logged_user"))
-
+		user, api_key, api_secret = self.create_published_api_user()
+		response = make_request(
+			get_test_client(use_cookies=False).get,
+			args=(self.method("frappe.auth.get_logged_user"),),
+			kwargs={"headers": {"Authorization": f"token {api_key}:{api_secret}"}},
+		)
 		self.assertEqual(response.status_code, 200)
-		self.assertEqual(response.json["data"], "Administrator")
-
-		authorization_token = None
+		self.assertEqual(response.json["data"], user)
 
 	def test_404s_v2(self):
 		response = self.get(self.get_path("rest"), {"sid": self.sid})
@@ -657,6 +656,7 @@ class TestBulkOperationsV2(FrappeAPITestCase):
 		"""Delete `docs`, waiting for `job_id` first: the job touches these same rows."""
 		if job_id:
 			wait_for_job(job_id)
+		frappe.db.rollback()
 		for doc in docs:
 			frappe.delete_doc_if_exists(self.DOCTYPE, doc.name)
 		frappe.db.commit()  # nosemgrep
@@ -1288,13 +1288,6 @@ class TestReadOnlyMode(FrappeAPITestCase):
 			)
 		self.assertEqual(response.status_code, 503)
 		self.assertEqual(response.json["errors"][0]["type"], "InReadOnlyMode")
-
-
-def generate_admin_keys():
-	from frappe.core.doctype.user.user import generate_keys
-
-	generate_keys("Administrator")
-	frappe.db.commit()  # nosemgrep
 
 
 @whitelist_for_tests()

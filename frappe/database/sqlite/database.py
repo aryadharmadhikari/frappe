@@ -680,6 +680,7 @@ class SQLiteDatabase(SQLiteExceptionUtil, Database):
 			self.before_rollback.run()
 
 			self._conn.rollback()
+			self.transaction_writes = 0
 			self._invalidate_transactional_schema_cache()
 			self._transaction_has_schema_changes = False
 			self.begin()
