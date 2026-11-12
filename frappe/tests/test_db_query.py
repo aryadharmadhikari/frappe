@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import frappe
-from frappe.core.doctype.doctype.test_doctype import new_doctype
+from frappe.core.doctype.doctype.test_doctype import insert_test_doctype, new_doctype
 from frappe.core.page.permission_manager.permission_manager import add, reset, update
 from frappe.custom.doctype.property_setter.property_setter import make_property_setter
 from frappe.database.utils import DefaultOrderBy
@@ -961,29 +961,22 @@ class TestDBQuery(IntegrationTestCase):
 
 	def test_nested_permission(self):
 		frappe.set_user("Administrator")
-		create_nested_doctype()
+		create_nested_doctype(self)
 		create_nested_doctype_records()
-		clear_user_permissions_for_doctype("Nested DocType")
 
 		# user permission for only one root folder
 		add_user_permission("Nested DocType", "Level 1 A", "test2@example.com")
-
-		from frappe.core.page.permission_manager.permission_manager import update
-
-		# to avoid if_owner filter
-		update("Nested DocType", "All", 0, "if_owner", 0)
 
 		with self.set_user("test2@example.com"):
 			data = DatabaseQuery("Nested DocType").execute()
 
 		# children of root folder (for which we added user permission) should be accessible
 		self.assertTrue({"name": "Level 2 A"} in data)
-		self.assertTrue({"name": "Level 2 A"} in data)
+		self.assertTrue({"name": "Level 3 A"} in data)
 
 		# other folders should not be accessible
 		self.assertFalse({"name": "Level 1 B"} in data)
 		self.assertFalse({"name": "Level 2 B"} in data)
-		update("Nested DocType", "All", 0, "if_owner", 1)
 
 	def test_filter_sanitizer(self):
 		self.assertRaises(
@@ -1103,7 +1096,8 @@ class TestDBQuery(IntegrationTestCase):
 
 	def test_of_not_of_descendant_ancestors(self):
 		frappe.set_user("Administrator")
-		clear_user_permissions_for_doctype("Nested DocType")
+		create_nested_doctype(self)
+		create_nested_doctype_records()
 
 		# in descendants filter
 		data = frappe.get_all("Nested DocType", {"name": ("descendants of", "Level 2 A")})
@@ -1371,7 +1365,7 @@ class TestDBQuery(IntegrationTestCase):
 		``frappe.db.get_values`` and ``get_query(..., ignore_permissions=True)``
 		intentionally do not mask.
 		"""
-		from frappe.core.doctype.doctype.test_doctype import new_doctype
+		from frappe.core.doctype.doctype.test_doctype import insert_test_doctype, new_doctype
 
 		frappe.delete_doc_if_exists("DocType", "Test Masked Pluck")
 		new_doctype(
@@ -1437,7 +1431,7 @@ class TestDBQuery(IntegrationTestCase):
 		"""
 		from pypika import functions as fn
 
-		from frappe.core.doctype.doctype.test_doctype import new_doctype
+		from frappe.core.doctype.doctype.test_doctype import insert_test_doctype, new_doctype
 
 		frappe.delete_doc_if_exists("DocType", "Test Masked Pluck Wrapped")
 		new_doctype(
@@ -1484,7 +1478,7 @@ class TestDBQuery(IntegrationTestCase):
 		frappe.set_user("Administrator")
 
 	def test_cast_name(self):
-		from frappe.core.doctype.doctype.test_doctype import new_doctype
+		from frappe.core.doctype.doctype.test_doctype import insert_test_doctype, new_doctype
 
 		frappe.delete_doc_if_exists("DocType", "autoinc_dt_test")
 		dt = new_doctype("autoinc_dt_test", autoname="autoincrement").insert(ignore_permissions=True)
@@ -1515,7 +1509,7 @@ class TestDBQuery(IntegrationTestCase):
 		dt.delete(ignore_permissions=True)
 
 	def test_fieldname_starting_with_int(self):
-		from frappe.core.doctype.doctype.test_doctype import new_doctype
+		from frappe.core.doctype.doctype.test_doctype import insert_test_doctype, new_doctype
 
 		frappe.delete_doc_if_exists("DocType", "dt_with_int_named_fieldname")
 		frappe.delete_doc_if_exists("DocType", "table_dt")
@@ -2161,22 +2155,18 @@ def create_event(subject="_Test Event", starts_on=None):
 	).insert(ignore_permissions=True)
 
 
-def create_nested_doctype():
-	if frappe.db.exists("DocType", "Nested DocType"):
-		return
-
-	frappe.get_doc(
-		{
-			"doctype": "DocType",
-			"name": "Nested DocType",
-			"module": "Custom",
-			"is_tree": 1,
-			"custom": 1,
-			"autoname": "Prompt",
-			"fields": [{"label": "Description", "fieldname": "description"}],
-			"permissions": [{"role": "Blogger"}],
-		}
-	).insert()
+def create_nested_doctype(test):
+	insert_test_doctype(
+		test,
+		new_doctype(
+			"Nested DocType",
+			module="Custom",
+			is_tree=1,
+			autoname="Prompt",
+			fields=[{"label": "Description", "fieldname": "description"}],
+			permissions=[{"role": "All", "read": 1}],
+		),
+	)
 
 
 def create_nested_doctype_records():
