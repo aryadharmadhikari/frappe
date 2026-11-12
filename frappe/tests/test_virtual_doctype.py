@@ -89,17 +89,13 @@ class TestVirtualDoctypes(IntegrationTestCase):
 		super().setUp()
 		directory = self.enterContext(TemporaryDirectory())
 		self.enterContext(patch.object(VirtualDoctypeTest, "DATA_FILE", os.path.join(directory, "data.json")))
-		self.enterContext(patch.dict(frappe.flags, allow_doctype_export=True))
 
-		insert_test_doctype(
-			self, new_doctype(name=TEST_CHILD_DOCTYPE_NAME, is_virtual=1, istable=1, custom=0)
-		)
+		insert_test_doctype(self, new_doctype(name=TEST_CHILD_DOCTYPE_NAME, is_virtual=1, istable=1))
 		insert_test_doctype(
 			self,
 			new_doctype(
 				name=TEST_DOCTYPE_NAME,
 				is_virtual=1,
-				custom=0,
 				fields=[
 					{
 						"label": "Child Table",
