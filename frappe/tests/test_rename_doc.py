@@ -14,6 +14,7 @@ from frappe.model.document import get_controller
 from frappe.model.rename_doc import bulk_rename, update_document_title
 from frappe.modules.utils import get_doc_path
 from frappe.tests import IntegrationTestCase
+from frappe.tests.baseline import SYSTEM_MANAGER
 from frappe.utils import add_to_date, now
 
 
@@ -223,7 +224,7 @@ class TestRenameDoc(IntegrationTestCase):
 			self.addCleanup(frappe.db.sql_ddl, f"drop table if exists `tab{name}`")
 			self.addCleanup(frappe.delete_doc_if_exists, "DocType", name)
 
-		with self.set_user("test@example.com"):
+		with self.set_user(SYSTEM_MANAGER):
 			self.assertRaises(
 				frappe.NameError, frappe.rename_doc, "DocType", doctype.name, "Permission Manager"
 			)
